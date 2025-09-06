@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Memory Draw — 5‑Second Flash</title>
+<style>
+  :root{
+    --bg:#0e0f12;
+    --panel:#161a1f;
+    --ink:#e8eef7;
+    --ink2:#a9b4c1;
+    --accent:#6ae2a1;
+    --accent2:#4cc3ff;
+    --danger:#ff6b6b;
+    --warn:#ffcc66;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,#0e0f12,#0b0c0f);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif}
+  .app{
+    max-width:900px;margin:0 auto;padding:12px 12px 72px;
+  }
+  header{
+    display:flex;align-items:center;gap:10px;justify-content:space-between;margin:6px 0 12px;
+  }
+  header h1{font-size:20px;margin:0;font-weight:700;letter-spacing:.2px}
+  header .sub{font-size:12px;color:var(--ink2)}
+  .card{background:var(--panel);border:1px solid #1f232a;border-radius:14px;box-shadow:0 8px 30px #0007;padding:12px}
+  .toolbar{
+    display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 6px;
+  }
+  button,.btn{
+    appearance:none;border:1px solid #2a2f39;background:#1a1f27;color:var(--ink);padding:10px 12px;border-radius:12px;
+    font-weight:600;font-size:14px;letter-spacing:.2px;cursor:pointer;transition:.15s transform,.15s background,.15s border-color;
+  }
+  button:active{transform:scale(.98)}
+  button.primary{background:linear-gradient(180deg,#1f5,#1ac);border-color:#174;border-image:linear-gradient(90deg,#6ae2a1,#4cc3ff) 1;background-clip:padding-box;border-radius:12px;color:#04140b}
+  button.warn{background:#2a2418;border-color:#4a3f20;color:#ffd27a}
+  button.danger{background:#2a1a1a;border-color:#4a2020;color:#ff9a9a}
+  input[type="range"]{accent-color:var(--accent2)}
+  label{font-size:12px;color:var(--ink2)}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .col{flex:1 1 300px}
+  .stage{position:relative;aspect-ratio:4/3;border-radius:12px;overflow:hidden;border:1px dashed #2b313c;background:#0b0f14}
+  .stage .countdown{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:64px;font-weight:800;color:#ffffff; text-shadow:0 4px 22px #000a;
+    background:linear-gradient(180deg,#000000a0,#000000a0);
+    opacity:0;pointer-events:none;transition:.2s;
+  }
+  .stage.revealing .countdown{opacity:1}
+  .stage img,.stage canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+  .hidden{display:none!important}
+  .hint{font-size:12px;color:var(--ink2);margin-top:6px}
+  .meter{
+    height:6px;background:#111;border-radius:99px;overflow:hidden;border:1px solid #242932
+  }
+  .meter > span{
+    display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent2));
+    transition:width .2s ease-out
+  }
+  .results{
+    margin-top:10px;padding:10px;border-radius:12px;background:#11151a;border:1px solid #232a35
+  }
+  .score{font-size:22px;font-weight:800}
+  .pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#10161c;border:1px solid #27303b;color:var(--ink2);font-size:12px}
+  .flex{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .grow{flex:1 1 auto}
+  .center{text-align:center}
+  .footer{
+    position:fixed;left:0;right:0;bottom:0;padding:10px;background:linear-gradient(180deg,#0b0c0f00,#0b0c0fcc 30%,#0b0c0fcc);backdrop-filter:blur(8px);border-top:1px solid #1b2028
+  }
+  .footer .wrap{max-width:900px;margin:0 auto;display:flex;gap:10px;align-items:center;justify-content:space-between}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
+  .thumb{width:96px;height:72px;border-radius:8px;border:1px solid #2a2f39;background:#0b0f14;object-fit:cover}
+  .ghost{opacity:.6}
+  .toggle{display:flex;align-items:center;gap:6px}
+  .toggle input{width:36px;height:24px}
+  @media (hover:none){
+    button,.btn{padding:12px 14px}
+  }
+</style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div>
+        <h1>Memory Draw — 5‑Second Flash</h1>
+        <div class="sub">See it for 5 seconds. Then draw from memory. Get a score.</div>
+      </div>
+      <button id="startBtn" class="primary">Start</button>
+    </header>
+
+    <div class="card">
+      <div class="toolbar">
+        <div class="flex grow">
+          <label title="Upload a custom image">
+            <input id="imgInput" type="file" accept="image/*" class="hidden">
+            <span class="btn">Upload Image</span>
+          </label>
+          <button id="randomBtn">Random Simple Image</button>
+          <button id="clearBtn" class="warn">Clear Drawing</button>
+          <label class="toggle">
+            <input type="checkbox" id="eraserToggle">
+            <span>Eraser</span>
+          </label>
+        </div>
+        <div class="flex">
+          <label for="brush">Brush</label>
+          <input id="brush" type="range" min="2" max="28" value="10">
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col">
+          <div class="stage" id="revealStage">
+            <img id="revealImg" alt="prompt image" />
+            <div class="countdown" id="countdown">5</div>
+          </div>
+          <div class="hint">Image shows for <b>5 seconds</b> once you press Start. Then it hides and you draw from memory.</div>
+          <div class="meter" aria-label="timer">
+            <span id="timerBar"></span>
+          </div>
+        </div>
+        <div class="col">
+          <div class="stage">
+            <canvas id="draw" aria-label="Draw here"></canvas>
+          </div>
+          <div class="flex" style="margin-top:8px">
+            <button id="gradeBtn">Grade my drawing</button>
+            <button id="restartBtn" class="ghost">Restart</button>
+            <div class="pill">Tip: Use your finger. Pinch-zoom not needed.</div>
+          </div>
+          <div id="results" class="results hidden">
+            <div class="flex" style="align-items:flex-start">
+              <img id="thumbOriginal" class="thumb" alt="original thumbnail">
+              <img id="thumbDraw" class="thumb" alt="drawing thumbnail">
+              <div class="grow">
+                <div class="score" id="scoreText">—</div>
+                <div id="verdict" class="hint"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div class="wrap">
+        <div class="hint">Psst: Scoring compares <span class="mono">edge maps</span> of your drawing vs. the original using a Dice similarity. Not perfect, but fun.</div>
+        <a id="saveBtn" class="btn" download="memory-draw.png">Save Drawing</a>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const revealImg = document.getElementById('revealImg');
+  const countdownEl = document.getElementById('countdown');
+  const timerBar = document.getElementById('timerBar');
+  const startBtn = document.getElementById('startBtn');
+  const imgInput = document.getElementById('imgInput');
+  const randomBtn = document.getElementById('randomBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const eraserToggle = document.getElementById('eraserToggle');
+  const brush = document.getElementById('brush');
+  const drawCanvas = document.getElementById('draw');
+  const gradeBtn = document.getElementById('gradeBtn');
+  const restartBtn = document.getElementById('restartBtn');
+  const results = document.getElementById('results');
+  const thumbOriginal = document.getElementById('thumbOriginal');
+  const thumbDraw = document.getElementById('thumbDraw');
+  const scoreText = document.getElementById('scoreText');
+  const verdict = document.getElementById('verdict');
+  const saveBtn = document.getElementById('saveBtn');
+  const revealStage = document.getElementById('revealStage');
+
+  let displayMs = 5000;
+  let revealTimer = null;
+  let revealProgress = 0;
+  let imageReady = false;
+  let sourceImageBitmap = null;
+  let sourceDataURL = null;
+
+  // HiDPI canvas setup
+  function fitCanvasToParent(canvas){
+    const parent = canvas.parentElement;
+    const rect = parent.getBoundingClientRect();
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    canvas.width = Math.floor(rect.width * dpr);
+    canvas.height = Math.floor(rect.height * dpr);
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = rect.height + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function generateSimpleImage(){
+    // Draw a random simple icon scene on a canvas, then use as source
+    const w = 512, h = 384;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#0b0f14'; ctx.fillRect(0,0,w,h);
+
+    const palette = ['#ffffff','#ffd166','#06d6a0','#ef476f','#118ab2'];
+    // pick a theme
+    const choice = Math.floor(Math.random()*4);
+    if(choice === 0){
+      // Smiley
+      ctx.fillStyle = '#ffd166';
+      ctx.beginPath(); ctx.arc(w/2, h/2, 120, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(w/2-45,h/2-30,18,0,2*Math.PI); ctx.fill();
+      ctx.beginPath(); ctx.arc(w/2+45,h/2-30,18,0,2*Math.PI); ctx.fill();
+      ctx.lineWidth = 12; ctx.strokeStyle = '#111';
+      ctx.beginPath(); ctx.arc(w/2, h/2+10, 70, Math.PI*.15, Math.PI-.15); ctx.stroke();
+    } else if(choice === 1){
+      // House
+      ctx.fillStyle = '#06d6a0'; ctx.fillRect(0,h-80,w,80);
+      ctx.fillStyle = '#ef476f'; ctx.fillRect(w/2-90,h-160,180,120);
+      ctx.fillStyle = '#c63b5e'; ctx.beginPath();
+      ctx.moveTo(w/2-110,h-160); ctx.lineTo(w/2,h-240); ctx.lineTo(w/2+110,h-160); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ffd166'; ctx.fillRect(w/2-25,h-120,50,80);
+      ctx.fillStyle = '#118ab2'; ctx.fillRect(w/2-70,h-140,40,40); ctx.fillRect(w/2+30,h-140,40,40);
+      // sun
+      ctx.fillStyle = '#ffd166'; ctx.beginPath(); ctx.arc(70,70,36,0,2*Math.PI); ctx.fill();
+    } else if(choice === 2){
+      // Tree
+      ctx.fillStyle = '#06d6a0'; ctx.fillRect(0,h-70,w,70);
+      ctx.fillStyle = '#8b5a2b'; ctx.fillRect(w/2-20,h-150,40,100);
+      ctx.fillStyle = '#2ecc71';
+      for(let i=0;i<5;i++){
+        ctx.beginPath();
+        ctx.arc(w/2 + Math.cos(i)*60, h-170 - i*18, 80 - i*8, 0, Math.PI*2);
+        ctx.fill();
+      }
+      // clouds
+      ctx.fillStyle = '#fff'; for(let i=0;i<3;i++){
+        const x = 120 + i*160; const y = 80 + (i%2)*20;
+        ctx.beginPath(); ctx.arc(x,y,24,0,2*Math.PI); ctx.arc(x+28,y+6,20,0,2*Math.PI); ctx.arc(x-26,y+10,18,0,2*Math.PI); ctx.fill();
+      }
+    } else {
+      // Rocket
+      ctx.fillStyle = '#111827'; ctx.fillRect(0,0,w,h);
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(w/2,h/2-120); ctx.lineTo(w/2-40,h/2+40); ctx.lineTo(w/2+40,h/2+40); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#4cc3ff'; ctx.beginPath(); ctx.arc(w/2, h/2-30, 18, 0, 2*Math.PI); ctx.fill();
+      ctx.fillStyle = '#ef476f'; ctx.beginPath(); ctx.moveTo(w/2-40,h/2+40); ctx.lineTo(w/2-70,h/2+70); ctx.lineTo(w/2-20,h/2+60); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(w/2+40,h/2+40); ctx.lineTo(w/2+70,h/2+70); ctx.lineTo(w/2+20,h/2+60); ctx.closePath(); ctx.fill();
+      // stars
+      ctx.fillStyle = '#fff'; for(let i=0;i<80;i++){ ctx.fillRect(Math.random()*w,Math.random()*h,1,1); }
+      // flame
+      const g = ctx.createLinearGradient(w/2,h/2+40,w/2,h/2+120); g.addColorStop(0,'#ffd166'); g.addColorStop(1,'#ff6b6b');
+      ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(w/2-16,h/2+40); ctx.lineTo(w/2,h/2+120); ctx.lineTo(w/2+16,h/2+40); ctx.closePath(); ctx.fill();
+    }
+    return c.toDataURL('image/png');
+  }
+
+  async function loadSourceFromDataURL(url){
+    sourceDataURL = url;
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const bmp = await createImageBitmap(img);
+    sourceImageBitmap = bmp;
+    revealImg.src = url;
+    imageReady = true;
+    thumbOriginal.src = url;
+  }
+
+  function startReveal(){
+    if(!imageReady){ // generate one if none
+      loadSourceFromDataURL(generateSimpleImage()).then(() => startReveal());
+      return;
+    }
+    results.classList.add('hidden');
+    revealStage.classList.add('revealing');
+    revealImg.style.opacity = '1';
+    countdownEl.style.opacity = '1';
+    let t0 = performance.now();
+    revealProgress = 0;
+    timerBar.style.width = '0%';
+    let lastSec = 6;
+    function tick(now){
+      const dt = now - t0;
+      revealProgress = Math.min(1, dt / displayMs);
+      timerBar.style.width = (revealProgress*100)+'%';
+      const secLeft = Math.ceil((displayMs - dt)/1000);
+      if(secLeft !== lastSec){
+        lastSec = secLeft;
+        countdownEl.textContent = Math.max(0, secLeft);
+      }
+      if(dt >= displayMs){
+        stopReveal();
+        return;
+      }
+      revealTimer = requestAnimationFrame(tick);
+    }
+    cancelAnimationFrame(revealTimer);
+    revealTimer = requestAnimationFrame(tick);
+  }
+
+  function stopReveal(){
+    cancelAnimationFrame(revealTimer);
+    countdownEl.style.opacity = '0';
+    revealImg.style.opacity = '0';
+    revealStage.classList.remove('revealing');
+  }
+
+  // Drawing
+  let drawing = false;
+  let lastX=0, lastY=0;
+  let isErasing = false;
+
+  function initCanvas(){
+    fitCanvasToParent(drawCanvas);
+    const ctx = drawCanvas.getContext('2d');
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#f5f7fb';
+    ctx.lineWidth = parseInt(brush.value,10);
+    ctx.fillStyle = 'transparent';
+    ctx.clearRect(0,0,drawCanvas.width,drawCanvas.height);
+  }
+
+  function setBrush(){
+    const ctx = drawCanvas.getContext('2d');
+    ctx.lineWidth = parseInt(brush.value,10);
+  }
+
+  function setEraser(on){
+    isErasing = on;
+    const ctx = drawCanvas.getContext('2d');
+    ctx.globalCompositeOperation = isErasing ? 'destination-out' : 'source-over';
+  }
+
+  function getPos(e){
+    const rect = drawCanvas.getBoundingClientRect();
+    if(e.touches && e.touches[0]){
+      return { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
+    } else {
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    }
+  }
+
+  function startDraw(e){
+    e.preventDefault();
+    drawing = true;
+    const p = getPos(e);
+    lastX = p.x; lastY = p.y;
+    const ctx = drawCanvas.getContext('2d');
+    ctx.beginPath(); ctx.moveTo(lastX, lastY);
+  }
+  function moveDraw(e){
+    if(!drawing) return;
+    const p = getPos(e);
+    const ctx = drawCanvas.getContext('2d');
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    lastX = p.x; lastY = p.y;
+  }
+  function endDraw(){
+    drawing = false;
+  }
+
+  // Edge detection (Sobel) & Dice score
+  function toGrayscale(imgData){
+    const d = imgData.data;
+    for(let i=0;i<d.length;i+=4){
+      const r=d[i], g=d[i+1], b=d[i+2];
+      const y = (0.2126*r + 0.7152*g + 0.0722*b);
+      d[i]=d[i+1]=d[i+2]=y;
+    }
+    return imgData;
+  }
+
+  function sobelEdges(grayData, w, h){
+    const d = grayData.data;
+    const out = new Uint8ClampedArray(w*h);
+    function idx(x,y){ return (y*w + x)*4; }
+    for(let y=1;y<h-1;y++){
+      for(let x=1;x<w-1;x++){
+        const i = idx(x,y);
+        const gx =
+          -d[idx(x-1,y-1)] -2*d[idx(x-1,y)] -d[idx(x-1,y+1)] +
+           d[idx(x+1,y-1)] +2*d[idx(x+1,y)] + d[idx(x+1,y+1)];
+        const gy =
+          -d[idx(x-1,y-1)] -2*d[idx(x,y-1)] -d[idx(x+1,y-1)] +
+           d[idx(x-1,y+1)] +2*d[idx(x,y+1)] + d[idx(x+1,y+1)];
+        const mag = Math.sqrt(gx*gx + gy*gy);
+        out[y*w + x] = mag>80 ? 255 : 0; // threshold
+      }
+    }
+    return out;
+  }
+
+  function diceSimilarity(a, b){
+    // a/b are Uint8ClampedArray (0/255) same length
+    let inter=0, ca=0, cb=0;
+    for(let i=0;i<a.length;i++){
+      const A = a[i] > 0 ? 1 : 0;
+      const B = b[i] > 0 ? 1 : 0;
+      inter += (A & B);
+      ca += A; cb += B;
+    }
+    if(ca+cb === 0) return 1; // both empty
+    return (2*inter) / (ca + cb);
+  }
+
+  function imageBitmapToCanvas(bmp, w, h){
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(bmp, 0, 0, w, h);
+    return c;
+  }
+
+  function getEdgeMapFromCanvas(cnv){
+    const w = 256, h = 192; // normalized for speed & consistency (4:3)
+    const tmp = document.createElement('canvas');
+    tmp.width = w; tmp.height = h;
+    const tctx = tmp.getContext('2d');
+    tctx.drawImage(cnv, 0, 0, w, h);
+    const imgData = tctx.getImageData(0,0,w,h);
+    const gray = toGrayscale(imgData);
+    const edges = sobelEdges(gray,w,h);
+    return {w,h,edges,thumb: tmp.toDataURL('image/png')};
+  }
+
+  async function gradeDrawing(){
+    if(!sourceImageBitmap && !sourceDataURL){
+      // Should not happen; generate one
+      await loadSourceFromDataURL(generateSimpleImage());
+    }
+    const w = 256, h = 192;
+    const srcCanvas = imageBitmapToCanvas(sourceImageBitmap, w, h);
+    const srcMap = getEdgeMapFromCanvas(srcCanvas);
+    const drawMap = getEdgeMapFromCanvas(drawCanvas);
+
+    // Dice similarity
+    const dice = diceSimilarity(srcMap.edges, drawMap.edges);
+    const pct = Math.round(dice * 100);
+
+    // Verdict
+    let msg = '';
+    if(pct >= 85) msg = 'Photographic! 🧠📸';
+    else if(pct >= 70) msg = 'Super close — impressive recall!';
+    else if(pct >= 55) msg = 'Nice work — your memory’s got style.';
+    else if(pct >= 40) msg = 'Hints of the original — keep at it.';
+    else msg = 'Abstract expressionism. Bold choice! 🎨';
+
+    scoreText.textContent = `Score: ${pct}% similarity`;
+    verdict.textContent = msg;
+    results.classList.remove('hidden');
+
+    // thumbs
+    thumbOriginal.src = srcMap.thumb;
+    thumbDraw.src = drawMap.thumb;
+  }
+
+  // Event wiring
+  window.addEventListener('resize', initCanvas);
+  brush.addEventListener('input', setBrush);
+  eraserToggle.addEventListener('change', (e)=> setEraser(e.target.checked));
+  clearBtn.addEventListener('click', ()=>{
+    const ctx = drawCanvas.getContext('2d');
+    ctx.clearRect(0,0,drawCanvas.width,drawCanvas.height);
+  });
+  gradeBtn.addEventListener('click', gradeDrawing);
+  restartBtn.addEventListener('click', ()=>{
+    results.classList.add('hidden');
+    startReveal();
+  });
+  startBtn.addEventListener('click', startReveal);
+  randomBtn.addEventListener('click', async ()=>{
+    await loadSourceFromDataURL(generateSimpleImage());
+    startReveal();
+  });
+  imgInput.addEventListener('change', async (e)=>{
+    if(!e.target.files || !e.target.files[0]) return;
+    const file = e.target.files[0];
+    const url = URL.createObjectURL(file);
+    await loadSourceFromDataURL(url);
+    URL.revokeObjectURL(url);
+    startReveal();
+  });
+  document.querySelector('label[title="Upload a custom image"]').addEventListener('click', ()=> imgInput.click());
+
+  // Drawing listeners
+  initCanvas();
+  const c = drawCanvas;
+  c.addEventListener('mousedown', startDraw);
+  c.addEventListener('mousemove', moveDraw);
+  window.addEventListener('mouseup', endDraw);
+  c.addEventListener('touchstart', startDraw, {passive:false});
+  c.addEventListener('touchmove', moveDraw, {passive:false});
+  window.addEventListener('touchend', endDraw);
+
+  // Save link
+  function refreshSaveLink(){
+    saveBtn.href = drawCanvas.toDataURL('image/png');
+  }
+  setInterval(refreshSaveLink, 1000);
+
+  // First load: generate something pleasant
+  (async ()=>{
+    await loadSourceFromDataURL(generateSimpleImage());
+  })();
+})();
+</script>
+</body>
+</html>
