@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<title>Memory Draw — 5‑Second Flash</title>
+<title>Memory Draw — 5-Second Flash</title>
 <style>
   :root{
     --bg:#0e0f12;
@@ -41,7 +41,7 @@
   label{font-size:12px;color:var(--ink2)}
   .row{display:flex;gap:10px;flex-wrap:wrap}
   .col{flex:1 1 300px}
-  .stage{position:relative;aspect-ratio:4/3;border-radius:12px;overflow:hidden;border:1px dashed #2b313c;background:#0b0f14}
+  .stage{position:relative;aspect-ratio:4/3;border-radius:12px;overflow:hidden;border:1px dashed #2b313c;background:#0b0f14;overscroll-behavior:contain}
   .stage .countdown{
     position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     font-size:64px;font-weight:800;color:#ffffff; text-shadow:0 4px 22px #000a;
@@ -50,6 +50,7 @@
   }
   .stage.revealing .countdown{opacity:1}
   .stage img,.stage canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+  .stage canvas{touch-action:none} /* prevent page scroll while drawing */
   .hidden{display:none!important}
   .hint{font-size:12px;color:var(--ink2);margin-top:6px}
   .meter{
@@ -85,7 +86,7 @@
   <div class="app">
     <header>
       <div>
-        <h1>Memory Draw — 5‑Second Flash</h1>
+        <h1>Memory Draw — 5-Second Flash</h1>
         <div class="sub">See it for 5 seconds. Then draw from memory. Get a score.</div>
       </div>
       <button id="startBtn" class="primary">Start</button>
@@ -147,7 +148,7 @@
 
     <div class="footer">
       <div class="wrap">
-        <div class="hint">Psst: Scoring compares <span class="mono">edge maps</span> of your drawing vs. the original using a Dice similarity. Not perfect, but fun.</div>
+        <div class="hint">Scoring compares <span class="mono">edge maps</span> of your drawing vs. the original using Dice similarity.</div>
         <a id="saveBtn" class="btn" download="memory-draw.png">Save Drawing</a>
       </div>
     </div>
@@ -182,29 +183,64 @@
   let sourceImageBitmap = null;
   let sourceDataURL = null;
 
-  // HiDPI canvas setup
-  function fitCanvasToParent(canvas){
-    const parent = canvas.parentElement;
+  // Track last known width to avoid clearing on mobile URL bar hide/show
+  let lastCanvasCSSWidth = 0;
+
+  // HiDPI canvas setup with preservation
+  function fitCanvasToParentPreserve(){
+    const parent = drawCanvas.parentElement;
     const rect = parent.getBoundingClientRect();
+    const cssW = Math.round(rect.width);
+    const cssH = Math.round(rect.height);
+    if(cssW === 0 || cssH === 0) return;
+
+    // Only redraw if width changed (ignore height-only changes from iOS address bar)
+    if(cssW === lastCanvasCSSWidth){
+      return;
+    }
+    lastCanvasCSSWidth = cssW;
+
     const dpr = Math.max(1, window.devicePixelRatio || 1);
-    canvas.width = Math.floor(rect.width * dpr);
-    canvas.height = Math.floor(rect.height * dpr);
-    canvas.style.width = rect.width + 'px';
-    canvas.style.height = rect.height + 'px';
-    const ctx = canvas.getContext('2d');
+
+    // Save current drawing
+    const prev = document.createElement('canvas');
+    prev.width = drawCanvas.width;
+    prev.height = drawCanvas.height;
+    const pctx = prev.getContext('2d');
+    pctx.drawImage(drawCanvas, 0, 0);
+
+    // Resize
+    drawCanvas.width = Math.floor(cssW * dpr);
+    drawCanvas.height = Math.floor(cssH * dpr);
+    drawCanvas.style.width = cssW + 'px';
+    drawCanvas.style.height = cssH + 'px';
+
+    const ctx = drawCanvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#f5f7fb';
+    ctx.lineWidth = parseInt(brush.value,10);
+    ctx.globalCompositeOperation = isErasing ? 'destination-out' : 'source-over';
+
+    // Restore scaled drawing
+    if(prev.width && prev.height){
+      ctx.drawImage(prev, 0, 0, prev.width, prev.height, 0, 0, drawCanvas.width, drawCanvas.height);
+    }
+  }
+
+  function initialCanvasSetup(){
+    // Force an initial size & record width reference
+    lastCanvasCSSWidth = 0;
+    fitCanvasToParentPreserve();
   }
 
   function generateSimpleImage(){
-    // Draw a random simple icon scene on a canvas, then use as source
     const w = 512, h = 384;
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
     const ctx = c.getContext('2d');
     ctx.fillStyle = '#0b0f14'; ctx.fillRect(0,0,w,h);
 
-    const palette = ['#ffffff','#ffd166','#06d6a0','#ef476f','#118ab2'];
-    // pick a theme
     const choice = Math.floor(Math.random()*4);
     if(choice === 0){
       // Smiley
@@ -222,7 +258,6 @@
       ctx.moveTo(w/2-110,h-160); ctx.lineTo(w/2,h-240); ctx.lineTo(w/2+110,h-160); ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#ffd166'; ctx.fillRect(w/2-25,h-120,50,80);
       ctx.fillStyle = '#118ab2'; ctx.fillRect(w/2-70,h-140,40,40); ctx.fillRect(w/2+30,h-140,40,40);
-      // sun
       ctx.fillStyle = '#ffd166'; ctx.beginPath(); ctx.arc(70,70,36,0,2*Math.PI); ctx.fill();
     } else if(choice === 2){
       // Tree
@@ -234,7 +269,6 @@
         ctx.arc(w/2 + Math.cos(i)*60, h-170 - i*18, 80 - i*8, 0, Math.PI*2);
         ctx.fill();
       }
-      // clouds
       ctx.fillStyle = '#fff'; for(let i=0;i<3;i++){
         const x = 120 + i*160; const y = 80 + (i%2)*20;
         ctx.beginPath(); ctx.arc(x,y,24,0,2*Math.PI); ctx.arc(x+28,y+6,20,0,2*Math.PI); ctx.arc(x-26,y+10,18,0,2*Math.PI); ctx.fill();
@@ -246,9 +280,7 @@
       ctx.fillStyle = '#4cc3ff'; ctx.beginPath(); ctx.arc(w/2, h/2-30, 18, 0, 2*Math.PI); ctx.fill();
       ctx.fillStyle = '#ef476f'; ctx.beginPath(); ctx.moveTo(w/2-40,h/2+40); ctx.lineTo(w/2-70,h/2+70); ctx.lineTo(w/2-20,h/2+60); ctx.closePath(); ctx.fill();
       ctx.beginPath(); ctx.moveTo(w/2+40,h/2+40); ctx.lineTo(w/2+70,h/2+70); ctx.lineTo(w/2+20,h/2+60); ctx.closePath(); ctx.fill();
-      // stars
       ctx.fillStyle = '#fff'; for(let i=0;i<80;i++){ ctx.fillRect(Math.random()*w,Math.random()*h,1,1); }
-      // flame
       const g = ctx.createLinearGradient(w/2,h/2+40,w/2,h/2+120); g.addColorStop(0,'#ffd166'); g.addColorStop(1,'#ff6b6b');
       ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(w/2-16,h/2+40); ctx.lineTo(w/2,h/2+120); ctx.lineTo(w/2+16,h/2+40); ctx.closePath(); ctx.fill();
     }
@@ -268,7 +300,7 @@
   }
 
   function startReveal(){
-    if(!imageReady){ // generate one if none
+    if(!imageReady){
       loadSourceFromDataURL(generateSimpleImage()).then(() => startReveal());
       return;
     }
@@ -311,17 +343,6 @@
   let lastX=0, lastY=0;
   let isErasing = false;
 
-  function initCanvas(){
-    fitCanvasToParent(drawCanvas);
-    const ctx = drawCanvas.getContext('2d');
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#f5f7fb';
-    ctx.lineWidth = parseInt(brush.value,10);
-    ctx.fillStyle = 'transparent';
-    ctx.clearRect(0,0,drawCanvas.width,drawCanvas.height);
-  }
-
   function setBrush(){
     const ctx = drawCanvas.getContext('2d');
     ctx.lineWidth = parseInt(brush.value,10);
@@ -362,7 +383,7 @@
     drawing = false;
   }
 
-  // Edge detection (Sobel) & Dice score
+  // Edge detection & Dice score
   function toGrayscale(imgData){
     const d = imgData.data;
     for(let i=0;i<d.length;i+=4){
@@ -372,14 +393,12 @@
     }
     return imgData;
   }
-
   function sobelEdges(grayData, w, h){
     const d = grayData.data;
     const out = new Uint8ClampedArray(w*h);
     function idx(x,y){ return (y*w + x)*4; }
     for(let y=1;y<h-1;y++){
       for(let x=1;x<w-1;x++){
-        const i = idx(x,y);
         const gx =
           -d[idx(x-1,y-1)] -2*d[idx(x-1,y)] -d[idx(x-1,y+1)] +
            d[idx(x+1,y-1)] +2*d[idx(x+1,y)] + d[idx(x+1,y+1)];
@@ -387,14 +406,12 @@
           -d[idx(x-1,y-1)] -2*d[idx(x,y-1)] -d[idx(x+1,y-1)] +
            d[idx(x-1,y+1)] +2*d[idx(x,y+1)] + d[idx(x+1,y+1)];
         const mag = Math.sqrt(gx*gx + gy*gy);
-        out[y*w + x] = mag>80 ? 255 : 0; // threshold
+        out[y*w + x] = mag>80 ? 255 : 0;
       }
     }
     return out;
   }
-
   function diceSimilarity(a, b){
-    // a/b are Uint8ClampedArray (0/255) same length
     let inter=0, ca=0, cb=0;
     for(let i=0;i<a.length;i++){
       const A = a[i] > 0 ? 1 : 0;
@@ -402,10 +419,9 @@
       inter += (A & B);
       ca += A; cb += B;
     }
-    if(ca+cb === 0) return 1; // both empty
+    if(ca+cb === 0) return 1;
     return (2*inter) / (ca + cb);
   }
-
   function imageBitmapToCanvas(bmp, w, h){
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
@@ -413,9 +429,8 @@
     ctx.drawImage(bmp, 0, 0, w, h);
     return c;
   }
-
   function getEdgeMapFromCanvas(cnv){
-    const w = 256, h = 192; // normalized for speed & consistency (4:3)
+    const w = 256, h = 192;
     const tmp = document.createElement('canvas');
     tmp.width = w; tmp.height = h;
     const tctx = tmp.getContext('2d');
@@ -425,40 +440,30 @@
     const edges = sobelEdges(gray,w,h);
     return {w,h,edges,thumb: tmp.toDataURL('image/png')};
   }
-
   async function gradeDrawing(){
     if(!sourceImageBitmap && !sourceDataURL){
-      // Should not happen; generate one
       await loadSourceFromDataURL(generateSimpleImage());
     }
     const w = 256, h = 192;
     const srcCanvas = imageBitmapToCanvas(sourceImageBitmap, w, h);
     const srcMap = getEdgeMapFromCanvas(srcCanvas);
     const drawMap = getEdgeMapFromCanvas(drawCanvas);
-
-    // Dice similarity
     const dice = diceSimilarity(srcMap.edges, drawMap.edges);
     const pct = Math.round(dice * 100);
-
-    // Verdict
     let msg = '';
     if(pct >= 85) msg = 'Photographic! 🧠📸';
     else if(pct >= 70) msg = 'Super close — impressive recall!';
     else if(pct >= 55) msg = 'Nice work — your memory’s got style.';
     else if(pct >= 40) msg = 'Hints of the original — keep at it.';
     else msg = 'Abstract expressionism. Bold choice! 🎨';
-
     scoreText.textContent = `Score: ${pct}% similarity`;
     verdict.textContent = msg;
     results.classList.remove('hidden');
-
-    // thumbs
     thumbOriginal.src = srcMap.thumb;
     thumbDraw.src = drawMap.thumb;
   }
 
   // Event wiring
-  window.addEventListener('resize', initCanvas);
   brush.addEventListener('input', setBrush);
   eraserToggle.addEventListener('change', (e)=> setEraser(e.target.checked));
   clearBtn.addEventListener('click', ()=>{
@@ -485,8 +490,7 @@
   });
   document.querySelector('label[title="Upload a custom image"]').addEventListener('click', ()=> imgInput.click());
 
-  // Drawing listeners
-  initCanvas();
+  // Pointer listeners
   const c = drawCanvas;
   c.addEventListener('mousedown', startDraw);
   c.addEventListener('mousemove', moveDraw);
@@ -496,15 +500,24 @@
   window.addEventListener('touchend', endDraw);
 
   // Save link
-  function refreshSaveLink(){
-    saveBtn.href = drawCanvas.toDataURL('image/png');
-  }
+  function refreshSaveLink(){ saveBtn.href = drawCanvas.toDataURL('image/png'); }
   setInterval(refreshSaveLink, 1000);
 
-  // First load: generate something pleasant
-  (async ()=>{
-    await loadSourceFromDataURL(generateSimpleImage());
-  })();
+  // Handle viewport changes without clearing strokes
+  function handleViewportChange(){
+    // debounce a bit
+    clearTimeout(handleViewportChange._t);
+    handleViewportChange._t = setTimeout(fitCanvasToParentPreserve, 50);
+  }
+  window.addEventListener('resize', handleViewportChange);
+  window.addEventListener('orientationchange', handleViewportChange);
+  if(window.visualViewport){
+    visualViewport.addEventListener('resize', handleViewportChange);
+  }
+
+  // First load
+  initialCanvasSetup();
+  (async ()=>{ await loadSourceFromDataURL(generateSimpleImage()); })();
 })();
 </script>
 </body>
