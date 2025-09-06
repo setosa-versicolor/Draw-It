@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-<title>Memory Draw — One Screen</title>
+<title>Memory Draw — One Screen (v4)</title>
 <style>
   :root{
     --bg:#0d1016;
@@ -13,19 +13,21 @@
     --accent:#4cc3ff;
     --accent2:#63f0a6;
     --good:#37d375; --warn:#ffcc66; --bad:#ff6b6b;
+    --toolbarH: 56px;
   }
   *{box-sizing:border-box}
   html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif;overflow:hidden}
   .app{display:flex;flex-direction:column;min-height:100dvh;height:100dvh;overflow:hidden}
   header{
     height:52px;display:flex;align-items:center;justify-content:space-between;
-    padding:0 10px;border-bottom:1px solid #212734;background:linear-gradient(180deg,#111622,#0e131d);
+    padding:calc(env(safe-area-inset-top,0) / 2) 10px 0 10px;
+    border-bottom:1px solid #212734;background:linear-gradient(180deg,#111622,#0e131d);
   }
   .title{font-weight:700;font-size:16px;letter-spacing:.2px}
   .hcontrols{display:flex;gap:8px;align-items:center}
   button,.btn{
     appearance:none;border:1px solid #2a3140;background:#1a202c;color:var(--ink);
-    padding:8px 12px;border-radius:10px;font-weight:700;font-size:13px;letter-spacing:.2px;cursor:pointer;
+    padding:10px 12px;border-radius:12px;font-weight:700;font-size:13px;letter-spacing:.2px;cursor:pointer;
   }
   button.primary{background:linear-gradient(180deg,#73ffa9,#4cc3ff);color:#0a1014;border:0}
   .ghost{opacity:.75}
@@ -39,12 +41,6 @@
   .countdown{position:absolute;inset:0;display:grid;place-items:center;font-size:56px;font-weight:900;color:#fff;text-shadow:0 6px 24px #000a;pointer-events:none}
   .center-msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px;color:var(--muted)}
   .pill{display:inline-block;padding:6px 10px;border-radius:999px;background:#0c1118;border:1px solid #1e2633;color:var(--muted);font-size:12px;margin-top:6px}
-  .toolbar{
-    position:absolute;left:0;right:0;bottom:0;display:flex;gap:8px;align-items:center;justify-content:space-between;
-    padding:10px;background:linear-gradient(180deg,#0b0f1400,#0b0f14cc 40%,#0b0f14cc);backdrop-filter:blur(6px);border-top:1px solid #1b2230;
-  }
-  .left,.right{display:flex;gap:8px;align-items:center}
-  .slider{width:140px;accent-color:var(--accent)}
   .meter{position:absolute;left:12px;right:12px;top:12px;height:6px;background:#0f141c;border:1px solid #1f2734;border-radius:99px;overflow:hidden;opacity:0;transition:.2s}
   .meter > span{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--accent2),var(--accent));}
   .meter.show{opacity:1}
@@ -52,10 +48,35 @@
   .good{background:#0f2b1b;color:var(--good)}
   .ok{background:#2a2412;color:var(--warn)}
   .bad{background:#2a1517;color:var(--bad)}
-
+  /* Bottom toolbar always visible within safe area */
+  .toolbar{
+    position:absolute;left:0;right:0;bottom:0;height:var(--toolbarH);
+    display:flex;gap:8px;align-items:center;justify-content:space-between;
+    padding:8px max(10px, env(safe-area-inset-left,0)) calc(max(env(safe-area-inset-bottom,0), 10px) - 2px) max(10px, env(safe-area-inset-left,0));
+    background:linear-gradient(180deg,#0b0f1400,#0b0f14cc 40%,#0b0f14cc);
+    backdrop-filter:blur(6px);border-top:1px solid #1b2230; z-index:20;
+  }
+  .left,.right{display:flex;gap:8px;align-items:center}
+  .toolbar .btn, .toolbar button{padding:10px 12px}
+  /* Floating controls above toolbar */
+  .float-controls{
+    position:absolute;left:50%;transform:translateX(-50%);
+    bottom:calc(var(--toolbarH) + max(env(safe-area-inset-bottom,0), 10px) + 8px);
+    display:flex;gap:10px;align-items:center;z-index:21;
+    background:#0f141c; border:1px solid #1f2734; border-radius:999px; padding:8px 12px;
+    box-shadow:0 8px 24px #0007;
+  }
+  .slider{width:160px;accent-color:var(--accent)}
+  .toggle{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}
+  .toggle input{width:38px;height:22px}
   /* prevent page scroll while drawing */
   canvas{touch-action:none}
   .stage{overscroll-behavior:contain}
+  /* Compact widths: stack left toolbar */
+  @media (max-width: 360px){
+    .left{gap:6px}
+    .slider{width:120px}
+  }
 </style>
 </head>
 <body>
@@ -103,22 +124,26 @@
           </div>
         </div>
       </div>
+
+      <!-- floating brush + eraser -->
+      <div class="float-controls" id="floatControls">
+        <label style="display:flex;align-items:center;gap:8px;color:var(--muted)">
+          Brush <input id="brush" class="slider" type="range" min="2" max="28" value="10">
+        </label>
+        <label class="toggle">
+          <input id="eraser" type="checkbox"> Eraser
+        </label>
+      </div>
     </div>
 
-    <!-- in-stage toolbar -->
+    <!-- bottom toolbar -->
     <div class="toolbar">
       <div class="left">
         <button id="undoBtn" class="btn">Undo</button>
         <button id="clearBtn" class="btn">Clear</button>
-        <label style="display:flex;align-items:center;gap:6px;color:var(--muted)">
-          Brush <input id="brush" class="slider" type="range" min="2" max="28" value="10">
-        </label>
-        <label style="display:flex;align-items:center;gap:6px;color:var(--muted)">
-          <input id="eraser" type="checkbox"> Eraser
-        </label>
       </div>
       <div class="right">
-        <button id="gradeBtn" class="primary">Grade</button>
+        <button id="gradeBtn" class="primary">Submit</button>
       </div>
     </div>
   </div>
@@ -150,6 +175,7 @@
   const brush = document.getElementById('brush');
   const eraser = document.getElementById('eraser');
   const gradeBtn = document.getElementById('gradeBtn');
+  const floatControls = document.getElementById('floatControls');
 
   // State
   let displayMs = 5000;
@@ -164,13 +190,12 @@
   let lastW = 0, lastH = 0;
   let resultViewMode = 0; // 0 overlay, 1 edges, 2 original, 3 your drawing
 
-  // Fixed full-screen sizing
+  // Fixed full-screen sizing (accounts for safe areas by sizing to stage-inner rect)
   function sizeCanvases(){
     const stage = drawCanvas.parentElement; // stage-inner
     const rect = stage.getBoundingClientRect();
-    const cssW = Math.round(rect.width);
-    const cssH = Math.round(rect.height);
-    if(cssW === 0 || cssH === 0) return;
+    const cssW = Math.max(1, Math.round(rect.width));
+    const cssH = Math.max(1, Math.round(rect.height));
     if(cssW === lastW && cssH === lastH) return;
     lastW = cssW; lastH = cssH;
     const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -200,7 +225,6 @@
       }
       ctx.stroke();
     }
-    // reset composite mode
     ctx.globalCompositeOperation = isErasing ? 'destination-out' : 'source-over';
     ctx.lineWidth = parseInt(brush.value,10);
   }
@@ -258,7 +282,6 @@
       loadSource(loadRandom()).then(enterReveal);
       return;
     }
-    // reset UI in one screen
     resultCanvas.style.display = 'none';
     resultHUD.style.display = 'none';
     drawCanvas.style.display = 'none';
@@ -292,13 +315,14 @@
     meter.classList.remove('show');
     countdownEl.style.opacity = '0';
     revealImg.style.opacity = '0';
-    // show drawing canvas
     drawCanvas.style.display = 'block';
   }
 
   // Drawing
+  let isPointerDown=false;
   function beginPath(e){
     e.preventDefault();
+    isPointerDown = true;
     isDrawing = true;
     const {x,y} = pointerPos(e);
     path = [{x,y}];
@@ -310,13 +334,13 @@
     ctx.beginPath(); ctx.moveTo(x,y);
   }
   function drawMove(e){
-    if(!isDrawing) return;
+    if(!isPointerDown) return;
     const {x,y} = pointerPos(e);
     path.push({x,y});
     const ctx = drawCanvas.getContext('2d');
     ctx.lineTo(x,y); ctx.stroke();
   }
-  function endPath(){ isDrawing = false; }
+  function endPath(){ isPointerDown=false; isDrawing=false; }
 
   function pointerPos(e){
     const rect = drawCanvas.getBoundingClientRect();
@@ -327,13 +351,8 @@
     }
   }
 
-  function undo(){
-    paths.pop(); redrawAll();
-  }
-  function clearAll(){
-    paths.splice(0, paths.length);
-    redrawAll();
-  }
+  function undo(){ paths.pop(); redrawAll(); }
+  function clearAll(){ paths.splice(0, paths.length); redrawAll(); }
 
   // Grading (edges + overlay render drawn in same canvas area)
   function toGray(imgData){
@@ -387,16 +406,10 @@
           const match = src && drw, extra = drw && !src, hint = src && !drw;
           if(match){ g=220; }
           else if(extra){ r=220; }
-          else if(hint){ r=g=b=50; a=255; }
-          else { r=g=b=0; a=255; }
-        } else if(mode===1){ // edges only
-          r=g=b= src ? 255 : 0;
-        } else if(mode===2){ // original thumbnail
-          // Just show src edges as white with dark bg
-          r=g=b= src ? 255 : 20;
-        } else { // your drawing edges
-          r=g=b= drw ? 255 : 20;
-        }
+          else if(hint){ r=g=b=50; }
+        } else if(mode===1){ r=g=b= src ? 255 : 0; }
+        else if(mode===2){ r=g=b= src ? 255 : 20; }
+        else { r=g=b= drw ? 255 : 20; }
         const di = ((j*WW)/h|0)*WW + ((i*WW)/w|0);
         const p = di*4;
         imgData.data[p]=r; imgData.data[p+1]=g; imgData.data[p+2]=b; imgData.data[p+3]=a;
@@ -406,23 +419,20 @@
   }
 
   async function grade(){
-    // downscale both to fixed size for consistency
     const W = 256, H = 192;
     // src
     const sc = document.createElement('canvas'); sc.width=W; sc.height=H;
     const sctx = sc.getContext('2d');
     sctx.drawImage(sourceImageBitmap, 0, 0, W, H);
     const srcEdges = sobel(toGray(sctx.getImageData(0,0,W,H)), W, H);
-
     // draw
     const dc = document.createElement('canvas'); dc.width=W; dc.height=H;
     const dctx = dc.getContext('2d');
     dctx.drawImage(drawCanvas, 0, 0, W, H);
     const drawEdges = sobel(toGray(dctx.getImageData(0,0,W,H)), W, H);
-
+    // score
     const sim = dice(srcEdges, drawEdges);
     const pct = Math.round(sim*100);
-
     scoreText.textContent = `Score: ${pct}%`;
     let label='Try Again', cls='bad', txt='Abstract expressionism. Bold choice! 🎨';
     if(pct>=90){label='A'; cls='good'; txt='Photographic recall!';}
@@ -485,7 +495,6 @@
     resultViewMode = (resultViewMode + 1) % 4;
     const labels = ['Overlay ▸','Edges ▸','Original ▸','Your edges ▸'];
     viewToggle.textContent = 'View: ' + labels[resultViewMode];
-    // Recompute last edges quickly (store? we recompute for simplicity)
     const W=256,H=192;
     const sc=document.createElement('canvas'); sc.width=W; sc.height=H;
     const sctx=sc.getContext('2d'); sctx.drawImage(sourceImageBitmap,0,0,W,H);
