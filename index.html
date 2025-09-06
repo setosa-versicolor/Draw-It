@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-<title>Memory Draw — v9</title>
+<title>Memory Draw — v10</title>
 <style>
   :root{
     --bg:#0b0f14;
@@ -15,6 +15,8 @@
     --accent2:#6ff0b2;
     --good:#37d375; --warn:#ffd166; --bad:#ff6b6b;
     --toolbarH: 56px;
+    --railW: 52px;
+    --railWopen: 240px;
   }
   *{box-sizing:border-box}
   html,body{height:100%;margin:0;background:radial-gradient(1200px 800px at 80% -20%, #142033 0%, #0b0f14 50%);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif;overflow:hidden}
@@ -27,33 +29,27 @@
   }
   .title{font-weight:800;font-size:16px;letter-spacing:.2px;display:flex;align-items:center;gap:8px}
   .title .dot{width:10px;height:10px;border-radius:999px;background:linear-gradient(180deg,var(--accent2),var(--accent))}
-  .hcontrols{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .hcontrols{display:flex;gap:8px;align-items:center}
   button,.btn{
     appearance:none;border:1px solid #263143;background:#121a27;color:var(--ink);
     padding:10px 12px;border-radius:12px;font-weight:700;font-size:13px;letter-spacing:.2px;cursor:pointer;transition:.15s transform ease, .15s opacity ease;
   }
   button:active{transform:translateY(1px)}
   button.primary{background:linear-gradient(180deg,#86ffbf,#60d0ff);color:#07121a;border:0}
-  select{border:1px solid #263143;background:#121a27;color:var(--ink);padding:9px 10px;border-radius:10px;font-weight:700}
-  .toggle-text{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;white-space:nowrap}
-  .toggle-text input{width:38px;height:22px}
+  .iconbtn{width:38px;height:38px;border-radius:10px;border:1px solid #1f2734;background:#0f141c;color:#e9eef7;display:grid;place-items:center}
   input[type="file"]{display:none}
+
   .stage{position:relative;flex:1;min-height:0;background:linear-gradient(180deg,#0a0f16,#0a0f16 60%, #0b121a);display:grid;place-items:center}
   .stage-inner{position:relative;width:100%;height:100%}
   .fill{position:absolute;inset:0}
   .fit{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
-  .countdown{position:absolute;inset:0;display:grid;place-items:center;font-size:52px;font-weight:900;color:#fff;text-shadow:0 6px 24px #000a;pointer-events:none;transform:scale(1);transition:.2s}
-  .countdown.pulse{animation:pulse 1s ease-in-out infinite}
-  @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+  .countdown{position:absolute;inset:0;display:grid;place-items:center;font-size:52px;font-weight:900;color:#fff;text-shadow:0 6px 24px #000a;pointer-events:none}
   .center-msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px;color:var(--muted)}
   .pill{display:inline-block;padding:6px 10px;border-radius:999px;background:#0c121a;border:1px solid #203047;color:var(--muted);font-size:12px;margin-top:6px}
   .meter{position:absolute;left:12px;right:12px;top:12px;height:6px;background:#0f141c;border:1px solid #1f2a3a;border-radius:99px;overflow:hidden;opacity:0;transition:.2s}
   .meter > span{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--accent2),var(--accent));}
   .meter.show{opacity:1}
-  .badge{padding:6px 10px;border-radius:999px;font-weight:800}
-  .good{background:#0f2b1b;color:var(--good)}
-  .ok{background:#2a2412;color:var(--warn)}
-  .bad{background:#2a1517;color:var(--bad)}
+
   /* Bottom toolbar */
   .toolbar{
     position:absolute;left:0;right:0;bottom:0;height:var(--toolbarH);
@@ -63,22 +59,32 @@
     backdrop-filter:blur(6px);border-top:1px solid #1b2433; z-index:20;
   }
   .left,.right{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  /* Floating controls above toolbar — responsive */
-  .float-controls{
-    position:absolute;
-    left:max(12px, env(safe-area-inset-left,0));
-    right:max(12px, env(safe-area-inset-right,0));
-    bottom:calc(var(--toolbarH) + max(env(safe-area-inset-bottom,0), 10px) + 8px);
-    display:flex;flex-wrap:wrap;justify-content:center;gap:10px;align-items:center;z-index:21;
-    background:#0f141c; border:1px solid #1f2a3a; border-radius:16px; padding:8px 12px;
-    box-shadow:0 8px 24px #0007;
-    max-width:min(96vw, 620px); margin:0 auto; transition:.2s opacity ease;
+
+  /* Tool Rail (right/left dock) */
+  .rail{
+    position:absolute;top:64px;bottom:calc(var(--toolbarH) + max(env(safe-area-inset-bottom,0), 10px) + 8px);
+    right:12px;width:var(--railW);z-index:25;
+    display:flex;flex-direction:column;align-items:stretch;gap:8px;
+    transition:width .2s ease, right .2s ease, left .2s ease;
   }
-  .float-controls.hide{opacity:.0;pointer-events:none}
-  .slider{width:clamp(90px, 28vw, 160px);accent-color:var(--accent)}
-  .slider-compact{width:clamp(70px, 20vw, 110px)}
-  canvas{touch-action:none}
-  .stage{overscroll-behavior:contain}
+  .rail.left{left:12px;right:auto}
+  .rail .card{
+    background:#0f141c;border:1px solid #1f2a3a;border-radius:14px;padding:8px;
+    box-shadow:0 8px 24px #0007;display:flex;flex-direction:column;gap:10px;height:100%;
+  }
+  .rail.collapsed{width:var(--railW)}
+  .rail.expanded{width:var(--railWopen)}
+  .rail .handle{
+    display:flex;align-items:center;justify-content:center;gap:6px;
+  }
+  .rail .chev{width:32px;height:32px;border-radius:10px;border:1px solid #1f2734;background:#0f141c;color:#e9eef7;display:grid;place-items:center}
+  .rail .dock{width:32px;height:32px;border-radius:10px;border:1px solid #1f2734;background:#0f141c;color:#e9eef7;display:grid;place-items:center}
+  .rail .title{font-size:12px;color:var(--muted);font-weight:800;letter-spacing:.3px}
+  .slider{width:100%;accent-color:var(--accent)}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .row label{color:var(--muted);font-size:12px}
+  .switch{width:38px;height:22px}
+
   /* Results top bar */
   .result-bar{
     position:absolute;left:0;right:0;top:0;
@@ -87,17 +93,23 @@
     background:linear-gradient(180deg,#0b0f14cc,#0b0f1400);
     border-bottom:1px solid #1b2230; z-index:22;
   }
-  .result-bar .group{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .mini{padding:6px 10px;border-radius:999px;border:1px solid #1f2734;background:#0f141c;color:#d9e2f2;font-weight:700;font-size:12px}
-  .iconbtn{width:38px;height:38px;border-radius:10px;border:1px solid #1f2734;background:#0f141c;color:#e9eef7;display:grid;place-items:center}
   .legend{position:absolute;right:12px;bottom:calc(var(--toolbarH) + max(env(safe-area-inset-bottom,0),10px) + 72px);background:#0f141c;border:1px solid #1f2734;border-radius:12px;padding:10px 12px;font-size:12px;color:var(--muted);display:none;z-index:22}
   .legend .row{display:flex;align-items:center;gap:6px;margin:4px 0}
   .sw{width:14px;height:14px;border-radius:3px}
   .sw.match{background:#1acc6d}
   .sw.extra{background:#ff6b6b}
   .sw.hint{background:#8892a6}
-  .badgeXS{padding:4px 8px;border-radius:999px;border:1px solid #1f2734;background:#0f141c;color:#bcd0ea;font-weight:700;font-size:11px}
-  .toast{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--toolbarH) + max(env(safe-area-inset-bottom,0), 10px) + 8px);background:#0f141c;border:1px solid #1f2734;border-radius:12px;padding:8px 12px;font-size:12px;color:#cfe2ff;display:none;z-index:40}
+
+  /* Settings sheet */
+  .sheet{position:fixed;inset:auto 0 0 0;height:auto;max-height:70%;background:#0f141c;border-top:1px solid #1f2734;border-radius:16px 16px 0 0;transform:translateY(100%);transition:.25s transform ease;z-index:50;padding:14px 14px calc(14px + env(safe-area-inset-bottom,0));}
+  .sheet.show{transform:translateY(0)}
+  .sheet h3{margin:4px 0 10px 0;font-size:14px;color:#cfe2ff}
+  .optrow{display:flex;align-items:center;justify-content:space-between;margin:8px 0}
+  .optrow small{color:var(--muted)}
+  .radio{display:flex;gap:8px;flex-wrap:wrap}
+  .radio label{border:1px solid #1f2734;background:#0b1118;padding:8px 10px;border-radius:10px;font-weight:700}
+  .footerRow{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
 </style>
 </head>
 <body>
@@ -105,17 +117,7 @@
   <header>
     <div class="title"><span class="dot"></span>Memory Draw</div>
     <div class="hcontrols">
-      <label class="btn">
-        <input id="imgInput" type="file" accept="image/*">
-        Upload
-      </label>
-      <button id="randomBtn" class="btn">Random</button>
-      <select id="mode">
-        <option value="3000">Quick 3s</option>
-        <option value="5000" selected>Standard 5s</option>
-        <option value="8000">Long 8s</option>
-      </select>
-      <label class="toggle-text"><input id="mute" type="checkbox"> Mute</label>
+      <button id="gearBtn" class="iconbtn" title="Settings">⚙️</button>
       <button id="startBtn" class="primary">Start</button>
     </div>
   </header>
@@ -132,19 +134,19 @@
       <div id="message" class="center-msg">
         <div>
           <div style="font-size:18px;color:#d9e2f2;font-weight:800">Press Start to begin</div>
-          <div class="pill">See an outline for a few seconds, then draw from memory.</div>
-          <div class="pill">Try <b>Challenge</b>: three rounds, average score & high score.</div>
+          <div class="pill">See the outline, then draw from memory.</div>
+          <div class="pill">Open <b>⚙️ Settings</b> to pick time & source.</div>
         </div>
       </div>
 
       <canvas id="resultCanvas" class="fill" style="display:none"></canvas>
       <div id="resultBar" class="result-bar" style="display:none">
-        <div class="group">
+        <div>
           <span id="scoreChip" class="mini">Score: —</span>
           <span id="gradeChip" class="mini">—</span>
-          <span id="challengeChip" class="badgeXS" style="display:none"></span>
+          <span id="challengeChip" class="mini" style="display:none"></span>
         </div>
-        <div class="group">
+        <div style="display:flex;gap:8px;align-items:center">
           <button id="legendBtn" class="iconbtn" title="Legend">ℹ️</button>
           <button id="viewToggle" class="iconbtn" title="Cycle view">▸</button>
           <button id="againBtn" class="btn">Again</button>
@@ -158,17 +160,24 @@
         <div class="row"><span class="sw hint"></span> Hint (in source, you missed)</div>
       </div>
 
-      <!-- floating controls -->
-      <div class="float-controls" id="floatControls">
-        <label style="display:flex;align-items:center;gap:8px;color:var(--muted);white-space:nowrap">
-          Brush <input id="brush" class="slider" type="range" min="2" max="28" value="10">
-        </label>
-        <label class="toggle-text"><input id="eraser" type="checkbox"> Eraser</label>
-        <label class="toggle-text"><input id="stabilize" type="checkbox" checked> Stabilizer</label>
-        <label style="display:flex;align-items:center;gap:8px;color:var(--muted);white-space:nowrap">
-          Detail <input id="detail" class="slider slider-compact" type="range" min="30" max="120" value="80" />
-        </label>
-        <button id="challengeBtn" class="btn">Challenge</button>
+      <!-- Tool Rail (collapsible, dockable) -->
+      <div id="rail" class="rail collapsed">
+        <div class="card">
+          <div class="handle">
+            <button id="railToggle" class="chev" title="Expand/Collapse">⟨⟩</button>
+            <button id="railDock" class="dock" title="Dock left/right">⇄</button>
+          </div>
+          <div id="railBody" style="display:none">
+            <div class="title">TOOLS</div>
+            <div class="row"><label>Brush</label><span id="brushVal" class="mini">10px</span></div>
+            <input id="brush" class="slider" type="range" min="2" max="28" value="10">
+            <div class="row"><label>Eraser</label><input id="eraser" class="switch" type="checkbox"></div>
+            <div class="row"><label>Stabilizer</label><input id="stabilize" class="switch" type="checkbox" checked></div>
+            <div class="row"><label>Detail</label><span id="detailVal" class="mini">80</span></div>
+            <input id="detail" class="slider" type="range" min="30" max="120" value="80" />
+            <button id="challengeBtn" class="btn">Challenge (3)</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -185,22 +194,62 @@
     </div>
   </div>
 
-  <div id="toast" class="toast"></div>
+  <!-- Settings Sheet -->
+  <div id="sheet" class="sheet" role="dialog" aria-modal="true">
+    <h3>Settings</h3>
+    <div class="optrow">
+      <div>
+        <div><b>Sound</b></div>
+        <small>Beep/haptic feedback</small>
+      </div>
+      <label><input id="mute" type="checkbox"> Mute</label>
+    </div>
+    <div class="optrow">
+      <div>
+        <div><b>Time</b></div>
+        <small>How long to view the outline</small>
+      </div>
+      <div class="radio">
+        <label><input type="radio" name="time" value="3000"> 3s</label>
+        <label><input type="radio" name="time" value="5000" checked> 5s</label>
+        <label><input type="radio" name="time" value="8000"> 8s</label>
+      </div>
+    </div>
+    <div class="optrow" style="align-items:flex-start">
+      <div>
+        <div><b>Source</b></div>
+        <small>Pick what to draw</small>
+      </div>
+      <div style="display:grid;gap:8px;justify-items:end">
+        <button id="randomBtn" class="btn">Random outline</button>
+        <label class="btn" style="text-align:center">
+          <input id="imgInput" type="file" accept="image/*"> Upload image
+        </label>
+      </div>
+    </div>
+    <div class="footerRow">
+      <button id="sheetClose" class="btn">Close</button>
+    </div>
+  </div>
 </div>
 
 <script>
 (function(){
   // Elements
-  const imgInput = document.getElementById('imgInput');
+  const gearBtn = document.getElementById('gearBtn');
+  const sheet = document.getElementById('sheet');
+  const sheetClose = document.getElementById('sheetClose');
+  const timeRadios = [...document.querySelectorAll('input[name="time"]')];
+  const mute = document.getElementById('mute');
   const randomBtn = document.getElementById('randomBtn');
+  const imgInput = document.getElementById('imgInput');
+
   const startBtn = document.getElementById('startBtn');
   const revealImg = document.getElementById('revealImg');
   const countdownEl = document.getElementById('countdown');
   const message = document.getElementById('message');
   const meter = document.getElementById('meter');
   const meterFill = document.getElementById('meterFill');
-  const modeSel = document.getElementById('mode');
-  const mute = document.getElementById('mute');
 
   const drawCanvas = document.getElementById('draw');
   const fxCanvas = document.getElementById('fx');
@@ -218,17 +267,23 @@
   const undoBtn = document.getElementById('undoBtn');
   const clearBtn = document.getElementById('clearBtn');
   const exportBtn = document.getElementById('exportBtn');
+  const gradeBtn = document.getElementById('gradeBtn');
+
+  // Rail
+  const rail = document.getElementById('rail');
+  const railToggle = document.getElementById('railToggle');
+  const railDock = document.getElementById('railDock');
+  const railBody = document.getElementById('railBody');
   const brush = document.getElementById('brush');
+  const brushVal = document.getElementById('brushVal');
   const eraser = document.getElementById('eraser');
   const detail = document.getElementById('detail');
+  const detailVal = document.getElementById('detailVal');
   const stabilize = document.getElementById('stabilize');
-  const gradeBtn = document.getElementById('gradeBtn');
-  const floatControls = document.getElementById('floatControls');
   const challengeBtn = document.getElementById('challengeBtn');
-  const toast = document.getElementById('toast');
 
   // State
-  let displayMs = parseInt(modeSel.value,10);
+  let displayMs = 5000;
   let revealTimer = null;
   let imageReady = false;
   let sourceImageBitmap = null;
@@ -240,26 +295,27 @@
   let resultViewMode = 0; // 0 overlay, 1 edges, 2 original, 3 your drawing
   let challenge = { active:false, round:0, scores:[], best: parseInt(localStorage.getItem('md_best')||'0',10) };
 
-  // Audio (tiny clicks)
-  const ctxAudio = new (window.AudioContext || window.webkitAudioContext || function(){})();
+  // Audio
+  let audioCtx;
+  function getAudio(){
+    if(audioCtx) return audioCtx;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if(Ctx){ audioCtx = new Ctx(); }
+    return audioCtx;
+  }
   function blip(freq=880, dur=0.05, vol=0.03){
-    if(mute.checked || !ctxAudio || !ctxAudio.createOscillator) return;
-    const o = ctxAudio.createOscillator();
-    const g = ctxAudio.createGain();
+    if(mute.checked) return;
+    const ctx = getAudio(); if(!ctx) return;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
     o.frequency.value=freq; o.type='sine';
     g.gain.value=vol;
-    o.connect(g).connect(ctxAudio.destination);
+    o.connect(g).connect(ctx.destination);
     o.start();
     setTimeout(()=>{ o.stop(); }, dur*1000);
   }
 
   // Helpers
-  function toastMsg(msg){
-    toast.textContent = msg;
-    toast.style.display = 'block';
-    clearTimeout(toast._t);
-    toast._t = setTimeout(()=>toast.style.display='none', 1600);
-  }
   function fitContain(containerW, containerH, contentW, contentH){
     const s = Math.min(containerW/contentW, containerH/contentH);
     const w = Math.round(contentW * s);
@@ -268,14 +324,11 @@
     const y = Math.round((containerH - h)/2);
     return {x,y,w,h};
   }
-
-  // Sizing
   function sizeCanvases(){
     const stage = drawCanvas.parentElement;
     const rect = stage.getBoundingClientRect();
     const cssW = Math.max(1, Math.round(rect.width));
     const cssH = Math.max(1, Math.round(rect.height));
-    if(cssW === stageCSSW && cssH === stageCSSH) return;
     stageCSSW = cssW; stageCSSH = cssH;
     const dpr = Math.max(1, window.devicePixelRatio || 1);
     [drawCanvas, resultCanvas, fxCanvas].forEach(c => {
@@ -288,6 +341,8 @@
     });
     redrawAll();
   }
+  window.addEventListener('resize', sizeCanvases);
+  if(window.visualViewport) visualViewport.addEventListener('resize', sizeCanvases);
 
   // Drawing (smoothed)
   function redrawAll(){
@@ -319,7 +374,7 @@
     ctx.stroke();
   }
 
-  // Random outline
+  // Random outline & outline preview
   function randomOutline(){
     const w = 640, h = 480;
     const c = document.createElement('canvas');
@@ -354,8 +409,6 @@
     }
     return c.toDataURL('image/png');
   }
-
-  // Edge helpers
   function toGray(imgData){
     const d = imgData.data;
     for(let i=0;i<d.length;i+=4){
@@ -421,7 +474,6 @@
     return c.toDataURL('image/png');
   }
 
-  // Reset for new round
   function hardResetDrawing(){
     paths.splice(0, paths.length);
     redrawAll();
@@ -429,7 +481,6 @@
     resultCanvas.style.display = 'none';
     resultBar.style.display = 'none';
     legend.style.display = 'none';
-    floatControls.classList.remove('hide');
   }
 
   // Flow
@@ -439,13 +490,13 @@
       return;
     }
     hardResetDrawing();
-    displayMs = parseInt(modeSel.value,10);
     message.style.display = 'none';
-    revealImg.style.opacity = '1';
     countdownEl.style.opacity = '1';
-    countdownEl.classList.add('pulse');
+    revealImg.style.opacity = '1';
     meter.classList.add('show');
     meterFill.style.width = '0%';
+    const left = timeRadios.find(r=>r.checked)?.value || '5000';
+    displayMs = parseInt(left,10);
     countdownEl.textContent = Math.round(displayMs/1000);
     blip(660,0.05,0.03);
 
@@ -456,9 +507,7 @@
       const p = Math.min(1, elapsed / displayMs);
       meterFill.style.width = (p*100)+'%';
       const left = Math.ceil((displayMs - elapsed)/1000);
-      const prev = countdownEl.textContent;
       countdownEl.textContent = Math.max(0,left);
-      if(prev !== countdownEl.textContent) blip(440,0.03,0.02);
       if(elapsed >= displayMs){
         exitRevealEnterDraw();
         return;
@@ -467,18 +516,23 @@
     }
     revealTimer = requestAnimationFrame(tick);
   }
-
   function exitRevealEnterDraw(){
     cancelAnimationFrame(revealTimer);
     meter.classList.remove('show');
-    countdownEl.classList.remove('pulse');
     countdownEl.style.opacity = '0';
     revealImg.style.opacity = '0';
     drawCanvas.style.display = 'block';
-    blip(880,0.06,0.04);
   }
 
-  // Pointer handling (with optional stabilizer)
+  // Pointer
+  function pointerPos(e){
+    const rect = drawCanvas.getBoundingClientRect();
+    if(e.touches && e.touches[0]){
+      return { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
+    } else {
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    }
+  }
   function beginPath(e){
     e.preventDefault();
     isPointerDown = true;
@@ -490,10 +544,7 @@
     const ctx = drawCanvas.getContext('2d');
     ctx.lineWidth = p.w;
     ctx.globalCompositeOperation = p.erase ? 'destination-out' : 'source-over';
-    if(stabilize.checked){
-      // seed a second point to help curve start
-      pth.push({x:x+0.01, y:y+0.01});
-    }
+    if(stabilize.checked){ pth.push({x:x+0.01, y:y+0.01}); }
     redrawAll();
   }
   function drawMove(e){
@@ -501,28 +552,17 @@
     const {x,y} = pointerPos(e);
     const pts = path;
     if(stabilize.checked && pts.length){
-      // simple smoothing: blend last point towards current
       const last = pts[pts.length-1];
       const k = 0.35;
       pts.push({x: last.x + (x-last.x)*k, y: last.y + (y-last.y)*k});
-    } else {
-      pts.push({x,y});
-    }
+    } else { pts.push({x,y}); }
     redrawAll();
   }
   function endPath(){ isPointerDown=false; }
-  function pointerPos(e){
-    const rect = drawCanvas.getBoundingClientRect();
-    if(e.touches && e.touches[0]){
-      return { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
-    } else {
-      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    }
-  }
   function undo(){ paths.pop(); redrawAll(); }
   function clearAll(){ paths.splice(0, paths.length); redrawAll(); }
 
-  // Alignment-consistent scoring (v8 logic)
+  // Scoring (alignment-consistent)
   function edgesFromStageSizedSource(thr){
     const off = document.createElement('canvas');
     off.width = stageCSSW; off.height = stageCSSH;
@@ -575,22 +615,16 @@
     const temp = document.createElement('canvas');
     temp.width = W; temp.height = H;
     temp.getContext('2d').putImageData(imgData, 0, 0);
-    // full stage
     ctx.drawImage(temp, 0, 0, stageCSSW, stageCSSH);
   }
 
   function celebrate(score){
-    // confetti + haptics
     const ctx = fxCanvas.getContext('2d');
     const W = fxCanvas.width, H = fxCanvas.height;
     const parts = [];
     const n = Math.min(180, Math.floor(40 + score));
     for(let i=0;i<n;i++){
-      parts.push({
-        x: Math.random()*W, y: -20-Math.random()*100,
-        vx: (Math.random()-0.5)*2, vy: 1+Math.random()*2,
-        s: 2+Math.random()*4, a: 1, hue: Math.random()*360
-      });
+      parts.push({ x: Math.random()*W, y: -20-Math.random()*100, vx: (Math.random()-0.5)*2, vy: 1+Math.random()*2, s: 2+Math.random()*4, a: 1, hue: Math.random()*360 });
     }
     let frames = 0;
     function step(){
@@ -625,27 +659,8 @@
     gradeChip.textContent = label;
     gradeChip.className = 'mini ' + cls;
 
-    // Challenge tracking
-    if(challenge.active){
-      challenge.scores.push(pct);
-      challenge.round++;
-      const avg = Math.round(challenge.scores.reduce((a,b)=>a+b,0)/challenge.scores.length);
-      challengeChip.style.display='inline-block';
-      challengeChip.textContent = `Challenge ${challenge.round}/3 • Avg ${avg}%`;
-      if(challenge.round>=3){
-        const best = Math.max(challenge.best, avg);
-        if(best !== challenge.best){ localStorage.setItem('md_best', String(best)); challenge.best = best; }
-        challengeChip.textContent = `Challenge done • Avg ${avg}% • Best ${best}%`;
-        challenge.active=false;
-        if(avg>=70) celebrate(avg);
-        else if(navigator.vibrate) navigator.vibrate([40,60,40]);
-      }
-    } else {
-      challengeChip.style.display='none';
-      if(pct>=80) celebrate(pct); else if(navigator.vibrate) navigator.vibrate(40);
-    }
+    if(pct>=80) celebrate(pct); else if(navigator.vibrate) navigator.vibrate(40);
 
-    floatControls.classList.add('hide');
     drawCanvas.style.display='none';
     resultCanvas.style.display='block';
     resultBar.style.display='flex';
@@ -654,72 +669,76 @@
     renderOverlayAligned(src.map, drw.map, W, H, resultViewMode);
   }
 
-  // Events
-  window.addEventListener('resize', sizeCanvases);
-  if(window.visualViewport) visualViewport.addEventListener('resize', sizeCanvases);
-
+  // Settings behavior
+  gearBtn.addEventListener('click', ()=> sheet.classList.add('show'));
+  sheetClose.addEventListener('click', ()=> sheet.classList.remove('show'));
+  timeRadios.forEach(r=> r.addEventListener('change', ()=>{}));
+  randomBtn.addEventListener('click', async ()=>{
+    await loadSource(randomOutline());
+  });
   imgInput.addEventListener('change', async (e)=>{
     const f = e.target.files && e.target.files[0];
     if(!f) return;
     const url = URL.createObjectURL(f);
     await loadSource(url);
     URL.revokeObjectURL(url);
-    toastMsg('Image loaded. Press Start.');
   });
-  randomBtn.addEventListener('click', async ()=>{
-    await loadSource(randomOutline());
-    toastMsg('Random outline ready. Press Start.');
-  });
-  modeSel.addEventListener('change', ()=>{
-    displayMs = parseInt(modeSel.value,10);
-  });
-  startBtn.addEventListener('click', enterReveal);
 
-  detail.addEventListener('input', async ()=>{
+  // Rail behavior
+  railToggle.addEventListener('click', ()=>{
+    const isOpen = rail.classList.contains('expanded');
+    if(isOpen){
+      rail.classList.remove('expanded'); rail.classList.add('collapsed');
+      railBody.style.display='none';
+    } else {
+      rail.classList.remove('collapsed'); rail.classList.add('expanded');
+      railBody.style.display='block';
+    }
+  });
+  railDock.addEventListener('click', ()=>{
+    if(rail.classList.contains('left')){
+      rail.classList.remove('left');
+    } else {
+      rail.classList.add('left');
+    }
+  });
+  brush.addEventListener('input', ()=>{
+    brushVal.textContent = brush.value + 'px';
+    const ctx = drawCanvas.getContext('2d');
+    ctx.lineWidth = parseInt(brush.value,10);
+  });
+  detail.addEventListener('input', ()=>{
+    detailVal.textContent = detail.value;
     if(sourceImageBitmap){
       revealImg.src = edgePreviewDataURL(sourceImageBitmap, parseInt(detail.value,10));
     }
   });
-
-  // drawing
-  brush.addEventListener('input', ()=>{
-    const ctx = drawCanvas.getContext('2d');
-    ctx.lineWidth = parseInt(brush.value,10);
-  });
   eraser.addEventListener('change', ()=>{ isErasing = eraser.checked; });
-  undoBtn.addEventListener('click', undo);
-  clearBtn.addEventListener('click', clearAll);
-  exportBtn.addEventListener('click', ()=>{
-    const url = drawCanvas.toDataURL('image/png');
-    const a = document.createElement('a'); a.href=url; a.download='memory-draw.png'; a.click();
+  challengeBtn.addEventListener('click', ()=>{
+    // simple challenge meta (streamlined): press Start / Submit 3x
+    challengeChip.style.display='inline-block';
+    challengeChip.textContent = 'Challenge: 0/3';
+    challenge = {active:true, round:0, scores:[], best: challenge.best};
   });
 
-  drawCanvas.addEventListener('mousedown', beginPath);
-  drawCanvas.addEventListener('mousemove', drawMove);
-  window.addEventListener('mouseup', endPath);
-  drawCanvas.addEventListener('touchstart', beginPath, {passive:false});
-  drawCanvas.addEventListener('touchmove', drawMove, {passive:false});
-  window.addEventListener('touchend', endPath);
-
-  gradeBtn.addEventListener('click', grade);
-  againBtn.addEventListener('click', ()=>{
-    hardResetDrawing();
-    message.style.display='grid';
+  // results controls
+  document.getElementById('legendBtn').addEventListener('click', ()=>{
+    legend.style.display = legend.style.display === 'block' ? 'none':'block';
   });
-  viewToggle.addEventListener('click', ()=>{
+  document.getElementById('viewToggle').addEventListener('click', ()=>{
     resultViewMode = (resultViewMode + 1) % 4;
-    const labels = ['▸','E','O','Y'];
-    viewToggle.textContent = labels[resultViewMode];
     const thr=parseInt(detail.value,10);
     const src=edgesFromStageSizedSource(thr);
     const drw=edgesFromStageDrawing(thr);
     renderOverlayAligned(src.map, drw.map, src.W, src.H, resultViewMode);
   });
-  legendBtn.addEventListener('click', ()=>{
-    legend.style.display = legend.style.display === 'block' ? 'none':'block';
+  document.getElementById('againBtn').addEventListener('click', ()=>{
+    resultCanvas.style.display='none';
+    resultBar.style.display='none';
+    paths.splice(0, paths.length); redrawAll();
+    message.style.display='grid';
   });
-  shareBtn.addEventListener('click', async ()=>{
-    // Compose a combined image: resultCanvas + score bar snapshot
+  document.getElementById('shareBtn').addEventListener('click', async ()=>{
     try{
       const combo = document.createElement('canvas');
       combo.width = stageCSSW; combo.height = stageCSSH;
@@ -736,16 +755,34 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); a.href=url; a.download='memory-draw-result.png'; a.click();
         setTimeout(()=>URL.revokeObjectURL(url),1000);
-        toastMsg('Saved image to downloads.');
       }
-    }catch(e){
-      toastMsg('Could not share; saved instead.');
+    }catch(e){ /* ignore */ }
+  });
+
+  // bottom toolbar
+  undoBtn.addEventListener('click', undo);
+  clearBtn.addEventListener('click', clearAll);
+  exportBtn.addEventListener('click', ()=>{
+    const url = drawCanvas.toDataURL('image/png');
+    const a = document.createElement('a'); a.href=url; a.download='memory-draw.png'; a.click();
+  });
+  gradeBtn.addEventListener('click', ()=>{
+    grade();
+    if(challenge.active){
+      challenge.round++;
+      challengeChip.style.display='inline-block';
+      challengeChip.textContent = `Challenge: ${challenge.round}/3`;
+      if(challenge.round>=3){ challenge.active=false; }
     }
   });
-  challengeBtn.addEventListener('click', ()=>{
-    challenge.active = true; challenge.round=0; challenge.scores=[];
-    toastMsg('Challenge: 3 rounds — press Start!');
-  });
+
+  // Stage pointer listeners
+  drawCanvas.addEventListener('mousedown', beginPath);
+  drawCanvas.addEventListener('mousemove', drawMove);
+  window.addEventListener('mouseup', endPath);
+  drawCanvas.addEventListener('touchstart', beginPath, {passive:false});
+  drawCanvas.addEventListener('touchmove', drawMove, {passive:false});
+  window.addEventListener('touchend', endPath);
 
   // Image loading
   async function loadSource(url){
@@ -759,6 +796,14 @@
   // Init
   sizeCanvases();
   loadSource(randomOutline()).then(()=>{});
+  // default rail collapsed
+  rail.classList.add('collapsed');
+  railBody.style.display='none';
+
+  // Wire settings sheet open/close
+  document.getElementById('gearBtn').addEventListener('click', ()=> sheet.classList.add('show'));
+  document.getElementById('sheetClose').addEventListener('click', ()=> sheet.classList.remove('show'));
+  document.getElementById('startBtn').addEventListener('click', enterReveal);
 })();
 </script>
 </body>
