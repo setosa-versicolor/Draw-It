@@ -3,45 +3,51 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-<title>Memory Draw — Outline Mode (v7)</title>
+<title>Memory Draw — v9</title>
 <style>
   :root{
-    --bg:#0d1016;
-    --panel:#161b22;
-    --ink:#e9eef7;
-    --muted:#9aa8bd;
-    --accent:#4cc3ff;
-    --accent2:#63f0a6;
-    --good:#37d375; --warn:#ffcc66; --bad:#ff6b6b;
+    --bg:#0b0f14;
+    --bg2:#0e141d;
+    --panel:#121826;
+    --ink:#eaf0fb;
+    --muted:#9fb0c8;
+    --accent:#60d0ff;
+    --accent2:#6ff0b2;
+    --good:#37d375; --warn:#ffd166; --bad:#ff6b6b;
     --toolbarH: 56px;
   }
   *{box-sizing:border-box}
-  html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif;overflow:hidden}
+  html,body{height:100%;margin:0;background:radial-gradient(1200px 800px at 80% -20%, #142033 0%, #0b0f14 50%);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif;overflow:hidden}
   .app{display:flex;flex-direction:column;min-height:100dvh;height:100dvh;overflow:hidden}
   header{
-    height:52px;display:flex;align-items:center;justify-content:space-between;
-    padding:calc(env(safe-area-inset-top,0) / 2) 10px 0 10px;
-    border-bottom:1px solid #212734;background:linear-gradient(180deg,#111622,#0e131d);
+    height:56px;display:flex;align-items:center;justify-content:space-between;
+    padding:calc(env(safe-area-inset-top,0) / 2) 12px 0 12px;
+    border-bottom:1px solid #1a2331;background:linear-gradient(180deg,#111a2b,#0e1522);
+    position:relative;z-index:30;
   }
-  .title{font-weight:700;font-size:16px;letter-spacing:.2px}
-  .hcontrols{display:flex;gap:8px;align-items:center}
+  .title{font-weight:800;font-size:16px;letter-spacing:.2px;display:flex;align-items:center;gap:8px}
+  .title .dot{width:10px;height:10px;border-radius:999px;background:linear-gradient(180deg,var(--accent2),var(--accent))}
+  .hcontrols{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   button,.btn{
-    appearance:none;border:1px solid #2a3140;background:#1a202c;color:var(--ink);
-    padding:10px 12px;border-radius:12px;font-weight:700;font-size:13px;letter-spacing:.2px;cursor:pointer;
+    appearance:none;border:1px solid #263143;background:#121a27;color:var(--ink);
+    padding:10px 12px;border-radius:12px;font-weight:700;font-size:13px;letter-spacing:.2px;cursor:pointer;transition:.15s transform ease, .15s opacity ease;
   }
-  button.primary{background:linear-gradient(180deg,#73ffa9,#4cc3ff);color:#0a1014;border:0}
-  .ghost{opacity:.75}
+  button:active{transform:translateY(1px)}
+  button.primary{background:linear-gradient(180deg,#86ffbf,#60d0ff);color:#07121a;border:0}
+  select{border:1px solid #263143;background:#121a27;color:var(--ink);padding:9px 10px;border-radius:10px;font-weight:700}
+  .toggle-text{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;white-space:nowrap}
+  .toggle-text input{width:38px;height:22px}
   input[type="file"]{display:none}
-  .stage{
-    position:relative;flex:1;min-height:0;background:#0b0f14;display:grid;place-items:center;
-  }
+  .stage{position:relative;flex:1;min-height:0;background:linear-gradient(180deg,#0a0f16,#0a0f16 60%, #0b121a);display:grid;place-items:center}
   .stage-inner{position:relative;width:100%;height:100%}
   .fill{position:absolute;inset:0}
   .fit{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
-  .countdown{position:absolute;inset:0;display:grid;place-items:center;font-size:56px;font-weight:900;color:#fff;text-shadow:0 6px 24px #000a;pointer-events:none}
+  .countdown{position:absolute;inset:0;display:grid;place-items:center;font-size:52px;font-weight:900;color:#fff;text-shadow:0 6px 24px #000a;pointer-events:none;transform:scale(1);transition:.2s}
+  .countdown.pulse{animation:pulse 1s ease-in-out infinite}
+  @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
   .center-msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px;color:var(--muted)}
-  .pill{display:inline-block;padding:6px 10px;border-radius:999px;background:#0c1118;border:1px solid #1e2633;color:var(--muted);font-size:12px;margin-top:6px}
-  .meter{position:absolute;left:12px;right:12px;top:12px;height:6px;background:#0f141c;border:1px solid #1f2734;border-radius:99px;overflow:hidden;opacity:0;transition:.2s}
+  .pill{display:inline-block;padding:6px 10px;border-radius:999px;background:#0c121a;border:1px solid #203047;color:var(--muted);font-size:12px;margin-top:6px}
+  .meter{position:absolute;left:12px;right:12px;top:12px;height:6px;background:#0f141c;border:1px solid #1f2a3a;border-radius:99px;overflow:hidden;opacity:0;transition:.2s}
   .meter > span{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--accent2),var(--accent));}
   .meter.show{opacity:1}
   .badge{padding:6px 10px;border-radius:999px;font-weight:800}
@@ -52,52 +58,64 @@
   .toolbar{
     position:absolute;left:0;right:0;bottom:0;height:var(--toolbarH);
     display:flex;gap:8px;align-items:center;justify-content:space-between;
-    padding:8px max(10px, env(safe-area-inset-left,0)) calc(max(env(safe-area-inset-bottom,0), 10px) - 2px) max(10px, env(safe-area-inset-left,0));
+    padding:8px max(12px, env(safe-area-inset-left,0)) calc(max(env(safe-area-inset-bottom,0), 10px) - 2px) max(12px, env(safe-area-inset-left,0));
     background:linear-gradient(180deg,#0b0f1400,#0b0f14cc 40%,#0b0f14cc);
-    backdrop-filter:blur(6px);border-top:1px solid #1b2230; z-index:20;
+    backdrop-filter:blur(6px);border-top:1px solid #1b2433; z-index:20;
   }
-  .left,.right{display:flex;gap:8px;align-items:center}
-  /* Floating controls above toolbar — responsive & within safe areas */
+  .left,.right{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  /* Floating controls above toolbar — responsive */
   .float-controls{
     position:absolute;
     left:max(12px, env(safe-area-inset-left,0));
     right:max(12px, env(safe-area-inset-right,0));
     bottom:calc(var(--toolbarH) + max(env(safe-area-inset-bottom,0), 10px) + 8px);
     display:flex;flex-wrap:wrap;justify-content:center;gap:10px;align-items:center;z-index:21;
-    background:#0f141c; border:1px solid #1f2734; border-radius:16px; padding:8px 12px;
+    background:#0f141c; border:1px solid #1f2a3a; border-radius:16px; padding:8px 12px;
     box-shadow:0 8px 24px #0007;
-    max-width:min(96vw, 560px); margin:0 auto;
+    max-width:min(96vw, 620px); margin:0 auto; transition:.2s opacity ease;
   }
+  .float-controls.hide{opacity:.0;pointer-events:none}
   .slider{width:clamp(90px, 28vw, 160px);accent-color:var(--accent)}
   .slider-compact{width:clamp(70px, 20vw, 110px)}
-  .toggle{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;white-space:nowrap}
-  .toggle input{width:38px;height:22px}
-  /* prevent page scroll while drawing */
   canvas{touch-action:none}
   .stage{overscroll-behavior:contain}
   /* Results top bar */
   .result-bar{
     position:absolute;left:0;right:0;top:0;
     display:flex;align-items:center;justify-content:space-between;
-    gap:8px;padding:8px max(10px, env(safe-area-inset-left,0)) 8px max(10px, env(safe-area-inset-left,0));
+    gap:8px;padding:8px max(12px, env(safe-area-inset-left,0)) 8px max(12px, env(safe-area-inset-left,0));
     background:linear-gradient(180deg,#0b0f14cc,#0b0f1400);
     border-bottom:1px solid #1b2230; z-index:22;
   }
   .result-bar .group{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .mini{padding:6px 10px;border-radius:999px;border:1px solid #1f2734;background:#0f141c;color:#d9e2f2;font-weight:700;font-size:12px}
   .iconbtn{width:38px;height:38px;border-radius:10px;border:1px solid #1f2734;background:#0f141c;color:#e9eef7;display:grid;place-items:center}
+  .legend{position:absolute;right:12px;bottom:calc(var(--toolbarH) + max(env(safe-area-inset-bottom,0),10px) + 72px);background:#0f141c;border:1px solid #1f2734;border-radius:12px;padding:10px 12px;font-size:12px;color:var(--muted);display:none;z-index:22}
+  .legend .row{display:flex;align-items:center;gap:6px;margin:4px 0}
+  .sw{width:14px;height:14px;border-radius:3px}
+  .sw.match{background:#1acc6d}
+  .sw.extra{background:#ff6b6b}
+  .sw.hint{background:#8892a6}
+  .badgeXS{padding:4px 8px;border-radius:999px;border:1px solid #1f2734;background:#0f141c;color:#bcd0ea;font-weight:700;font-size:11px}
+  .toast{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--toolbarH) + max(env(safe-area-inset-bottom,0), 10px) + 8px);background:#0f141c;border:1px solid #1f2734;border-radius:12px;padding:8px 12px;font-size:12px;color:#cfe2ff;display:none;z-index:40}
 </style>
 </head>
 <body>
 <div class="app">
   <header>
-    <div class="title">Memory Draw — Outline Mode</div>
+    <div class="title"><span class="dot"></span>Memory Draw</div>
     <div class="hcontrols">
       <label class="btn">
         <input id="imgInput" type="file" accept="image/*">
         Upload
       </label>
       <button id="randomBtn" class="btn">Random</button>
+      <select id="mode">
+        <option value="3000">Quick 3s</option>
+        <option value="5000" selected>Standard 5s</option>
+        <option value="8000">Long 8s</option>
+      </select>
+      <label class="toggle-text"><input id="mute" type="checkbox"> Mute</label>
       <button id="startBtn" class="primary">Start</button>
     </div>
   </header>
@@ -105,45 +123,52 @@
   <div class="stage">
     <div class="meter" id="meter"><span id="meterFill"></span></div>
     <div class="stage-inner">
-      <!-- reveal image (OUTLINE) -->
       <img id="revealImg" class="fit" alt="prompt outline" style="opacity:0;transition:.15s"/>
       <div id="countdown" class="countdown" style="opacity:0">5</div>
 
-      <!-- drawing canvas -->
       <canvas id="draw" class="fill" aria-label="Draw here" style="display:none"></canvas>
+      <canvas id="fx" class="fill" style="pointer-events:none"></canvas>
 
-      <!-- center message -->
       <div id="message" class="center-msg">
         <div>
           <div style="font-size:18px;color:#d9e2f2;font-weight:800">Press Start to begin</div>
-          <div class="pill">You’ll see a simple OUTLINE of the image for 5 seconds, then draw from memory.</div>
+          <div class="pill">See an outline for a few seconds, then draw from memory.</div>
+          <div class="pill">Try <b>Challenge</b>: three rounds, average score & high score.</div>
         </div>
       </div>
 
-      <!-- result view (same stage) -->
       <canvas id="resultCanvas" class="fill" style="display:none"></canvas>
       <div id="resultBar" class="result-bar" style="display:none">
         <div class="group">
           <span id="scoreChip" class="mini">Score: —</span>
           <span id="gradeChip" class="mini">—</span>
+          <span id="challengeChip" class="badgeXS" style="display:none"></span>
         </div>
         <div class="group">
+          <button id="legendBtn" class="iconbtn" title="Legend">ℹ️</button>
           <button id="viewToggle" class="iconbtn" title="Cycle view">▸</button>
           <button id="againBtn" class="btn">Again</button>
+          <button id="shareBtn" class="btn">Share</button>
         </div>
       </div>
 
-      <!-- floating controls (brush/eraser + outline detail) -->
+      <div id="legend" class="legend">
+        <div class="row"><span class="sw match"></span> Match</div>
+        <div class="row"><span class="sw extra"></span> Extra (you drew, not in source)</div>
+        <div class="row"><span class="sw hint"></span> Hint (in source, you missed)</div>
+      </div>
+
+      <!-- floating controls -->
       <div class="float-controls" id="floatControls">
         <label style="display:flex;align-items:center;gap:8px;color:var(--muted);white-space:nowrap">
           Brush <input id="brush" class="slider" type="range" min="2" max="28" value="10">
         </label>
-        <label class="toggle">
-          <input id="eraser" type="checkbox"> Eraser
-        </label>
+        <label class="toggle-text"><input id="eraser" type="checkbox"> Eraser</label>
+        <label class="toggle-text"><input id="stabilize" type="checkbox" checked> Stabilizer</label>
         <label style="display:flex;align-items:center;gap:8px;color:var(--muted);white-space:nowrap">
           Detail <input id="detail" class="slider slider-compact" type="range" min="30" max="120" value="80" />
         </label>
+        <button id="challengeBtn" class="btn">Challenge</button>
       </div>
     </div>
 
@@ -152,12 +177,15 @@
       <div class="left">
         <button id="undoBtn" class="btn">Undo</button>
         <button id="clearBtn" class="btn">Clear</button>
+        <button id="exportBtn" class="btn">Export</button>
       </div>
       <div class="right">
         <button id="gradeBtn" class="primary">Submit</button>
       </div>
     </div>
   </div>
+
+  <div id="toast" class="toast"></div>
 </div>
 
 <script>
@@ -171,45 +199,86 @@
   const message = document.getElementById('message');
   const meter = document.getElementById('meter');
   const meterFill = document.getElementById('meterFill');
+  const modeSel = document.getElementById('mode');
+  const mute = document.getElementById('mute');
 
   const drawCanvas = document.getElementById('draw');
+  const fxCanvas = document.getElementById('fx');
   const resultCanvas = document.getElementById('resultCanvas');
   const resultBar = document.getElementById('resultBar');
   const scoreChip = document.getElementById('scoreChip');
   const gradeChip = document.getElementById('gradeChip');
+  const challengeChip = document.getElementById('challengeChip');
   const viewToggle = document.getElementById('viewToggle');
   const againBtn = document.getElementById('againBtn');
+  const legendBtn = document.getElementById('legendBtn');
+  const legend = document.getElementById('legend');
+  const shareBtn = document.getElementById('shareBtn');
 
   const undoBtn = document.getElementById('undoBtn');
   const clearBtn = document.getElementById('clearBtn');
+  const exportBtn = document.getElementById('exportBtn');
   const brush = document.getElementById('brush');
   const eraser = document.getElementById('eraser');
   const detail = document.getElementById('detail');
+  const stabilize = document.getElementById('stabilize');
   const gradeBtn = document.getElementById('gradeBtn');
+  const floatControls = document.getElementById('floatControls');
+  const challengeBtn = document.getElementById('challengeBtn');
+  const toast = document.getElementById('toast');
 
   // State
-  let displayMs = 5000;
+  let displayMs = parseInt(modeSel.value,10);
   let revealTimer = null;
   let imageReady = false;
   let sourceImageBitmap = null;
-  let sourceDataURL = null;
-  let isPointerDown = false;  // <- declared ONCE
+  let isPointerDown = false;
   let isErasing = false;
   let path = [];
   const paths = []; // for Undo
-  let lastW = 0, lastH = 0;
+  let stageCSSW = 0, stageCSSH = 0;
   let resultViewMode = 0; // 0 overlay, 1 edges, 2 original, 3 your drawing
+  let challenge = { active:false, round:0, scores:[], best: parseInt(localStorage.getItem('md_best')||'0',10) };
 
-  // Fixed full-screen sizing
+  // Audio (tiny clicks)
+  const ctxAudio = new (window.AudioContext || window.webkitAudioContext || function(){})();
+  function blip(freq=880, dur=0.05, vol=0.03){
+    if(mute.checked || !ctxAudio || !ctxAudio.createOscillator) return;
+    const o = ctxAudio.createOscillator();
+    const g = ctxAudio.createGain();
+    o.frequency.value=freq; o.type='sine';
+    g.gain.value=vol;
+    o.connect(g).connect(ctxAudio.destination);
+    o.start();
+    setTimeout(()=>{ o.stop(); }, dur*1000);
+  }
+
+  // Helpers
+  function toastMsg(msg){
+    toast.textContent = msg;
+    toast.style.display = 'block';
+    clearTimeout(toast._t);
+    toast._t = setTimeout(()=>toast.style.display='none', 1600);
+  }
+  function fitContain(containerW, containerH, contentW, contentH){
+    const s = Math.min(containerW/contentW, containerH/contentH);
+    const w = Math.round(contentW * s);
+    const h = Math.round(contentH * s);
+    const x = Math.round((containerW - w)/2);
+    const y = Math.round((containerH - h)/2);
+    return {x,y,w,h};
+  }
+
+  // Sizing
   function sizeCanvases(){
-    const stage = drawCanvas.parentElement; // stage-inner
+    const stage = drawCanvas.parentElement;
     const rect = stage.getBoundingClientRect();
     const cssW = Math.max(1, Math.round(rect.width));
     const cssH = Math.max(1, Math.round(rect.height));
-    if(cssW === lastW && cssH === lastH) return;
-    lastW = cssW; lastH = cssH;
+    if(cssW === stageCSSW && cssH === stageCSSH) return;
+    stageCSSW = cssW; stageCSSH = cssH;
     const dpr = Math.max(1, window.devicePixelRatio || 1);
-    [drawCanvas, resultCanvas].forEach(c => {
+    [drawCanvas, resultCanvas, fxCanvas].forEach(c => {
       c.width = Math.floor(cssW * dpr);
       c.height = Math.floor(cssH * dpr);
       c.style.width = cssW + 'px';
@@ -220,26 +289,37 @@
     redrawAll();
   }
 
+  // Drawing (smoothed)
   function redrawAll(){
     const ctx = drawCanvas.getContext('2d');
-    ctx.clearRect(0,0,drawCanvas.width,drawCanvas.height);
+    ctx.clearRect(0,0,stageCSSW,stageCSSH);
     ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#fff';
     for(const p of paths){
       ctx.lineWidth = p.w;
       ctx.globalCompositeOperation = p.erase ? 'destination-out' : 'source-over';
-      ctx.beginPath();
-      for(let i=0;i<p.pts.length;i++){
-        const pt = p.pts[i];
-        if(i===0) ctx.moveTo(pt.x, pt.y);
-        else ctx.lineTo(pt.x, pt.y);
-      }
-      ctx.stroke();
+      smoothStroke(ctx, p.pts);
     }
     ctx.globalCompositeOperation = isErasing ? 'destination-out' : 'source-over';
     ctx.lineWidth = parseInt(brush.value,10);
   }
+  function smoothStroke(ctx, pts){
+    if(!pts.length) return;
+    if(pts.length<3){
+      ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+      for(let i=1;i<pts.length;i++){ ctx.lineTo(pts[i].x, pts[i].y); }
+      ctx.stroke(); return;
+    }
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for(let i=1;i<pts.length-1;i++){
+      const cpx = (pts[i].x + pts[i+1].x)/2;
+      const cpy = (pts[i].y + pts[i+1].y)/2;
+      ctx.quadraticCurveTo(pts[i].x, pts[i].y, cpx, cpy);
+    }
+    ctx.stroke();
+  }
 
-  // Random stroke-only image
+  // Random outline
   function randomOutline(){
     const w = 640, h = 480;
     const c = document.createElement('canvas');
@@ -247,7 +327,6 @@
     const ctx = c.getContext('2d');
     ctx.fillStyle = '#0b0f14'; ctx.fillRect(0,0,w,h);
     ctx.lineWidth = 8; ctx.strokeStyle = '#ffffff'; ctx.lineCap='round'; ctx.lineJoin='round';
-
     const theme = Math.floor(Math.random()*4);
     if(theme===0){
       ctx.beginPath(); ctx.arc(w/2,h/2,140,0,Math.PI*2); ctx.stroke();
@@ -276,7 +355,7 @@
     return c.toDataURL('image/png');
   }
 
-  // Edge/outline helpers
+  // Edge helpers
   function toGray(imgData){
     const d = imgData.data;
     for(let i=0;i<d.length;i+=4){
@@ -342,23 +421,15 @@
     return c.toDataURL('image/png');
   }
 
-  async function loadSource(url){
-    sourceDataURL = url;
-    const img = new Image();
-    img.src = url; await img.decode();
-    sourceImageBitmap = await createImageBitmap(img);
-    imageReady = true;
-    const outlineURL = edgePreviewDataURL(sourceImageBitmap, parseInt(detail.value,10));
-    revealImg.src = outlineURL;
-  }
-
-  // Reset drawing & results for a new round
+  // Reset for new round
   function hardResetDrawing(){
     paths.splice(0, paths.length);
     redrawAll();
     drawCanvas.style.display = 'none';
     resultCanvas.style.display = 'none';
     resultBar.style.display = 'none';
+    legend.style.display = 'none';
+    floatControls.classList.remove('hide');
   }
 
   // Flow
@@ -367,15 +438,16 @@
       loadSource(randomOutline()).then(enterReveal);
       return;
     }
-    // Always start clean
     hardResetDrawing();
-
+    displayMs = parseInt(modeSel.value,10);
     message.style.display = 'none';
     revealImg.style.opacity = '1';
     countdownEl.style.opacity = '1';
+    countdownEl.classList.add('pulse');
     meter.classList.add('show');
     meterFill.style.width = '0%';
-    countdownEl.textContent = '5';
+    countdownEl.textContent = Math.round(displayMs/1000);
+    blip(660,0.05,0.03);
 
     const t0 = performance.now();
     cancelAnimationFrame(revealTimer);
@@ -384,7 +456,9 @@
       const p = Math.min(1, elapsed / displayMs);
       meterFill.style.width = (p*100)+'%';
       const left = Math.ceil((displayMs - elapsed)/1000);
+      const prev = countdownEl.textContent;
       countdownEl.textContent = Math.max(0,left);
+      if(prev !== countdownEl.textContent) blip(440,0.03,0.02);
       if(elapsed >= displayMs){
         exitRevealEnterDraw();
         return;
@@ -397,33 +471,46 @@
   function exitRevealEnterDraw(){
     cancelAnimationFrame(revealTimer);
     meter.classList.remove('show');
+    countdownEl.classList.remove('pulse');
     countdownEl.style.opacity = '0';
     revealImg.style.opacity = '0';
     drawCanvas.style.display = 'block';
+    blip(880,0.06,0.04);
   }
 
-  // Drawing
+  // Pointer handling (with optional stabilizer)
   function beginPath(e){
     e.preventDefault();
     isPointerDown = true;
     const {x,y} = pointerPos(e);
-    path = [{x,y}];
-    const p = { w: parseInt(brush.value,10), erase: isErasing, pts: path };
+    const pth = [{x,y}];
+    path = pth;
+    const p = { w: parseInt(brush.value,10), erase: isErasing, pts: pth };
     paths.push(p);
     const ctx = drawCanvas.getContext('2d');
     ctx.lineWidth = p.w;
     ctx.globalCompositeOperation = p.erase ? 'destination-out' : 'source-over';
-    ctx.beginPath(); ctx.moveTo(x,y);
+    if(stabilize.checked){
+      // seed a second point to help curve start
+      pth.push({x:x+0.01, y:y+0.01});
+    }
+    redrawAll();
   }
   function drawMove(e){
     if(!isPointerDown) return;
     const {x,y} = pointerPos(e);
-    path.push({x,y});
-    const ctx = drawCanvas.getContext('2d');
-    ctx.lineTo(x,y); ctx.stroke();
+    const pts = path;
+    if(stabilize.checked && pts.length){
+      // simple smoothing: blend last point towards current
+      const last = pts[pts.length-1];
+      const k = 0.35;
+      pts.push({x: last.x + (x-last.x)*k, y: last.y + (y-last.y)*k});
+    } else {
+      pts.push({x,y});
+    }
+    redrawAll();
   }
   function endPath(){ isPointerDown=false; }
-
   function pointerPos(e){
     const rect = drawCanvas.getBoundingClientRect();
     if(e.touches && e.touches[0]){
@@ -432,26 +519,31 @@
       return { x: e.clientX - rect.left, y: e.clientY - rect.top };
     }
   }
-
   function undo(){ paths.pop(); redrawAll(); }
   function clearAll(){ paths.splice(0, paths.length); redrawAll(); }
 
-  // Scoring
-  function sobelBinaryFromCanvasLike(cnv, W=256, H=192, thr=80){
-    const tmp = document.createElement('canvas'); tmp.width=W; tmp.height=H;
-    const tctx = tmp.getContext('2d');
-    tctx.drawImage(cnv, 0, 0, W, H);
-    const g = toGray(tctx.getImageData(0,0,W,H));
-    const mags = sobel(g, W, H);
-    return thresholdEdges(mags, W, H, thr);
+  // Alignment-consistent scoring (v8 logic)
+  function edgesFromStageSizedSource(thr){
+    const off = document.createElement('canvas');
+    off.width = stageCSSW; off.height = stageCSSH;
+    const ctx = off.getContext('2d');
+    ctx.fillStyle = '#000'; ctx.fillRect(0,0,off.width,off.height);
+    const fit = fitContain(stageCSSW, stageCSSH, sourceImageBitmap.width, sourceImageBitmap.height);
+    ctx.drawImage(sourceImageBitmap, fit.x, fit.y, fit.w, fit.h);
+    const AW = 256; const AH = Math.max(1, Math.round(AW * (stageCSSH / stageCSSW)));
+    const small = document.createElement('canvas'); small.width=AW; small.height=AH;
+    small.getContext('2d').drawImage(off, 0, 0, AW, AH);
+    const g = toGray(small.getContext('2d').getImageData(0,0,AW,AH));
+    const mags = sobel(g, AW, AH);
+    return { map: thresholdEdges(mags, AW, AH, thr), W: AW, H: AH };
   }
-  function sobelBinaryFromBitmap(bmp, W=256, H=192, thr=80){
-    const tmp = document.createElement('canvas'); tmp.width=W; tmp.height=H;
-    const tctx = tmp.getContext('2d');
-    tctx.drawImage(bmp, 0, 0, W, H);
-    const g = toGray(tctx.getImageData(0,0,W,H));
-    const mags = sobel(g, W, H);
-    return thresholdEdges(mags, W, H, thr);
+  function edgesFromStageDrawing(thr){
+    const AW = 256; const AH = Math.max(1, Math.round(AW * (stageCSSH / stageCSSW)));
+    const small = document.createElement('canvas'); small.width=AW; small.height=AH;
+    small.getContext('2d').drawImage(drawCanvas, 0, 0, AW, AH);
+    const g = toGray(small.getContext('2d').getImageData(0,0,AW,AH));
+    const mags = sobel(g, AW, AH);
+    return { map: thresholdEdges(mags, AW, AH, thr), W: AW, H: AH };
   }
   function dice(a,b){
     let inter=0, ca=0, cb=0;
@@ -462,41 +554,66 @@
     if(ca+cb===0) return 1;
     return (2*inter)/(ca+cb);
   }
-  function renderOverlayInResult(srcEdges, drawEdges, w, h, mode){
+  function renderOverlayAligned(srcEdges, drawEdges, W, H, mode){
     const ctx = resultCanvas.getContext('2d');
-    ctx.clearRect(0,0,resultCanvas.width,resultCanvas.height);
-    const R = Math.min(resultCanvas.width/w, resultCanvas.height/h);
-    const WW = Math.floor(w*R), HH = Math.floor(h*R);
-    const ox = Math.floor((resultCanvas.width - WW)/2);
-    const oy = Math.floor((resultCanvas.height - HH)/2);
-    const imgData = ctx.createImageData(WW, HH);
-    for(let j=0;j<h;j++){
-      for(let i=0;i<w;i++){
-        const src = srcEdges[j*w+i] > 0;
-        const drw = drawEdges[j*w+i] > 0;
+    ctx.clearRect(0,0,stageCSSW,stageCSSH);
+    const imgData = ctx.createImageData(W, H);
+    for(let j=0;j<H;j++){
+      for(let i=0;i<W;i++){
+        const src = srcEdges[j*W+i] > 0;
+        const drw = drawEdges[j*W+i] > 0;
         let r=0,g=0,b=0,a=255;
-        if(mode===0){
-          const match = src && drw, extra = drw && !src, hint = src && !drw;
-          if(match){ g=220; }
-          else if(extra){ r=220; }
-          else if(hint){ r=g=b=60; }
+        if(mode===0){ const match=src&&drw, extra=drw&&!src, hint=src&&!drw;
+          if(match){ g=220; } else if(extra){ r=220; } else if(hint){ r=g=b=60; }
         } else if(mode===1){ r=g=b= src ? 255 : 0; }
         else if(mode===2){ r=g=b= src ? 255 : 20; }
         else { r=g=b= drw ? 255 : 20; }
-        const di = ((j*WW)/h|0)*WW + ((i*WW)/w|0);
-        const p = di*4;
+        const p = (j*W + i)*4;
         imgData.data[p]=r; imgData.data[p+1]=g; imgData.data[p+2]=b; imgData.data[p+3]=a;
       }
     }
-    ctx.putImageData(imgData, ox, oy);
+    const temp = document.createElement('canvas');
+    temp.width = W; temp.height = H;
+    temp.getContext('2d').putImageData(imgData, 0, 0);
+    // full stage
+    ctx.drawImage(temp, 0, 0, stageCSSW, stageCSSH);
+  }
+
+  function celebrate(score){
+    // confetti + haptics
+    const ctx = fxCanvas.getContext('2d');
+    const W = fxCanvas.width, H = fxCanvas.height;
+    const parts = [];
+    const n = Math.min(180, Math.floor(40 + score));
+    for(let i=0;i<n;i++){
+      parts.push({
+        x: Math.random()*W, y: -20-Math.random()*100,
+        vx: (Math.random()-0.5)*2, vy: 1+Math.random()*2,
+        s: 2+Math.random()*4, a: 1, hue: Math.random()*360
+      });
+    }
+    let frames = 0;
+    function step(){
+      frames++;
+      ctx.clearRect(0,0,W,H);
+      for(const p of parts){
+        p.vy += 0.02; p.x += p.vx; p.y += p.vy; p.a -= 0.003;
+        ctx.fillStyle = `hsla(${p.hue},90%,60%,${Math.max(0,p.a)})`;
+        ctx.fillRect(p.x, p.y, p.s, p.s*2);
+      }
+      if(frames < 260){ requestAnimationFrame(step); }
+      else { ctx.clearRect(0,0,W,H); }
+    }
+    requestAnimationFrame(step);
+    if(navigator.vibrate) navigator.vibrate(80);
   }
 
   async function grade(){
-    const W = 256, H = 192;
     const thr = parseInt(detail.value,10);
-    const srcEdges = sobelBinaryFromBitmap(sourceImageBitmap, W, H, thr);
-    const drawEdges = sobelBinaryFromCanvasLike(drawCanvas, W, H, thr);
-    const sim = dice(srcEdges, drawEdges);
+    const src = edgesFromStageSizedSource(thr);
+    const drw = edgesFromStageDrawing(thr);
+    const W = src.W, H = src.H;
+    const sim = dice(src.map, drw.map);
     const pct = Math.round(sim*100);
 
     scoreChip.textContent = `Score: ${pct}%`;
@@ -508,12 +625,33 @@
     gradeChip.textContent = label;
     gradeChip.className = 'mini ' + cls;
 
+    // Challenge tracking
+    if(challenge.active){
+      challenge.scores.push(pct);
+      challenge.round++;
+      const avg = Math.round(challenge.scores.reduce((a,b)=>a+b,0)/challenge.scores.length);
+      challengeChip.style.display='inline-block';
+      challengeChip.textContent = `Challenge ${challenge.round}/3 • Avg ${avg}%`;
+      if(challenge.round>=3){
+        const best = Math.max(challenge.best, avg);
+        if(best !== challenge.best){ localStorage.setItem('md_best', String(best)); challenge.best = best; }
+        challengeChip.textContent = `Challenge done • Avg ${avg}% • Best ${best}%`;
+        challenge.active=false;
+        if(avg>=70) celebrate(avg);
+        else if(navigator.vibrate) navigator.vibrate([40,60,40]);
+      }
+    } else {
+      challengeChip.style.display='none';
+      if(pct>=80) celebrate(pct); else if(navigator.vibrate) navigator.vibrate(40);
+    }
+
+    floatControls.classList.add('hide');
     drawCanvas.style.display='none';
     resultCanvas.style.display='block';
     resultBar.style.display='flex';
     resultViewMode = 0;
     viewToggle.textContent = '▸';
-    renderOverlayInResult(srcEdges, drawEdges, W, H, resultViewMode);
+    renderOverlayAligned(src.map, drw.map, W, H, resultViewMode);
   }
 
   // Events
@@ -526,11 +664,17 @@
     const url = URL.createObjectURL(f);
     await loadSource(url);
     URL.revokeObjectURL(url);
+    toastMsg('Image loaded. Press Start.');
   });
   randomBtn.addEventListener('click', async ()=>{
     await loadSource(randomOutline());
+    toastMsg('Random outline ready. Press Start.');
+  });
+  modeSel.addEventListener('change', ()=>{
+    displayMs = parseInt(modeSel.value,10);
   });
   startBtn.addEventListener('click', enterReveal);
+
   detail.addEventListener('input', async ()=>{
     if(sourceImageBitmap){
       revealImg.src = edgePreviewDataURL(sourceImageBitmap, parseInt(detail.value,10));
@@ -545,6 +689,10 @@
   eraser.addEventListener('change', ()=>{ isErasing = eraser.checked; });
   undoBtn.addEventListener('click', undo);
   clearBtn.addEventListener('click', clearAll);
+  exportBtn.addEventListener('click', ()=>{
+    const url = drawCanvas.toDataURL('image/png');
+    const a = document.createElement('a'); a.href=url; a.download='memory-draw.png'; a.click();
+  });
 
   drawCanvas.addEventListener('mousedown', beginPath);
   drawCanvas.addEventListener('mousemove', drawMove);
@@ -558,6 +706,55 @@
     hardResetDrawing();
     message.style.display='grid';
   });
+  viewToggle.addEventListener('click', ()=>{
+    resultViewMode = (resultViewMode + 1) % 4;
+    const labels = ['▸','E','O','Y'];
+    viewToggle.textContent = labels[resultViewMode];
+    const thr=parseInt(detail.value,10);
+    const src=edgesFromStageSizedSource(thr);
+    const drw=edgesFromStageDrawing(thr);
+    renderOverlayAligned(src.map, drw.map, src.W, src.H, resultViewMode);
+  });
+  legendBtn.addEventListener('click', ()=>{
+    legend.style.display = legend.style.display === 'block' ? 'none':'block';
+  });
+  shareBtn.addEventListener('click', async ()=>{
+    // Compose a combined image: resultCanvas + score bar snapshot
+    try{
+      const combo = document.createElement('canvas');
+      combo.width = stageCSSW; combo.height = stageCSSH;
+      const cctx = combo.getContext('2d');
+      cctx.drawImage(resultCanvas, 0, 0);
+      cctx.fillStyle = '#0f141cc0';
+      cctx.fillRect(12,12,180,36);
+      cctx.fillStyle='#eaf0fb'; cctx.font='bold 16px system-ui'; cctx.fillText(scoreChip.textContent, 22, 36);
+      const blob = await new Promise(res=> combo.toBlob(res, 'image/png', 0.95));
+      const file = new File([blob], 'memory-draw-result.png', {type:'image/png'});
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        await navigator.share({files:[file], title:'Memory Draw', text:'My Memory Draw score!'});
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href=url; a.download='memory-draw-result.png'; a.click();
+        setTimeout(()=>URL.revokeObjectURL(url),1000);
+        toastMsg('Saved image to downloads.');
+      }
+    }catch(e){
+      toastMsg('Could not share; saved instead.');
+    }
+  });
+  challengeBtn.addEventListener('click', ()=>{
+    challenge.active = true; challenge.round=0; challenge.scores=[];
+    toastMsg('Challenge: 3 rounds — press Start!');
+  });
+
+  // Image loading
+  async function loadSource(url){
+    const img = new Image();
+    img.src = url; await img.decode();
+    sourceImageBitmap = await createImageBitmap(img);
+    imageReady = true;
+    revealImg.src = edgePreviewDataURL(sourceImageBitmap, parseInt(detail.value,10));
+  }
 
   // Init
   sizeCanvases();
