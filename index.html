@@ -2,359 +2,323 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<title>Memory Draw — 5-Second Flash</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<title>Memory Draw — One Screen</title>
 <style>
   :root{
-    --bg:#0e0f12;
-    --panel:#161a1f;
-    --ink:#e8eef7;
-    --ink2:#a9b4c1;
-    --accent:#6ae2a1;
-    --accent2:#4cc3ff;
-    --danger:#ff6b6b;
-    --warn:#ffcc66;
+    --bg:#0d1016;
+    --panel:#161b22;
+    --ink:#e9eef7;
+    --muted:#9aa8bd;
+    --accent:#4cc3ff;
+    --accent2:#63f0a6;
+    --good:#37d375; --warn:#ffcc66; --bad:#ff6b6b;
   }
   *{box-sizing:border-box}
-  html,body{height:100%;margin:0;background:linear-gradient(180deg,#0e0f12,#0b0c0f);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif}
-  .app{
-    max-width:900px;margin:0 auto;padding:12px 12px 72px;
-  }
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif;overflow:hidden}
+  .app{display:flex;flex-direction:column;min-height:100dvh;height:100dvh;overflow:hidden}
   header{
-    display:flex;align-items:center;gap:10px;justify-content:space-between;margin:6px 0 12px;
+    height:52px;display:flex;align-items:center;justify-content:space-between;
+    padding:0 10px;border-bottom:1px solid #212734;background:linear-gradient(180deg,#111622,#0e131d);
   }
-  header h1{font-size:20px;margin:0;font-weight:700;letter-spacing:.2px}
-  header .sub{font-size:12px;color:var(--ink2)}
-  .card{background:var(--panel);border:1px solid #1f232a;border-radius:14px;box-shadow:0 8px 30px #0007;padding:12px}
-  .toolbar{
-    display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 6px;
-  }
+  .title{font-weight:700;font-size:16px;letter-spacing:.2px}
+  .hcontrols{display:flex;gap:8px;align-items:center}
   button,.btn{
-    appearance:none;border:1px solid #2a2f39;background:#1a1f27;color:var(--ink);padding:10px 12px;border-radius:12px;
-    font-weight:600;font-size:14px;letter-spacing:.2px;cursor:pointer;transition:.15s transform,.15s background,.15s border-color;
+    appearance:none;border:1px solid #2a3140;background:#1a202c;color:var(--ink);
+    padding:8px 12px;border-radius:10px;font-weight:700;font-size:13px;letter-spacing:.2px;cursor:pointer;
   }
-  button:active{transform:scale(.98)}
-  button.primary{background:linear-gradient(180deg,#1f5,#1ac);border-color:#174;border-image:linear-gradient(90deg,#6ae2a1,#4cc3ff) 1;background-clip:padding-box;border-radius:12px;color:#04140b}
-  button.warn{background:#2a2418;border-color:#4a3f20;color:#ffd27a}
-  button.danger{background:#2a1a1a;border-color:#4a2020;color:#ff9a9a}
-  input[type="range"]{accent-color:var(--accent2)}
-  label{font-size:12px;color:var(--ink2)}
-  .row{display:flex;gap:10px;flex-wrap:wrap}
-  .col{flex:1 1 300px}
-  .stage{position:relative;aspect-ratio:4/3;border-radius:12px;overflow:hidden;border:1px dashed #2b313c;background:#0b0f14;overscroll-behavior:contain}
-  .stage .countdown{
-    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-    font-size:64px;font-weight:800;color:#ffffff; text-shadow:0 4px 22px #000a;
-    background:linear-gradient(180deg,#000000a0,#000000a0);
-    opacity:0;pointer-events:none;transition:.2s;
+  button.primary{background:linear-gradient(180deg,#73ffa9,#4cc3ff);color:#0a1014;border:0}
+  .ghost{opacity:.75}
+  input[type="file"]{display:none}
+  .stage{
+    position:relative;flex:1;min-height:0;background:#0b0f14;display:grid;place-items:center;
   }
-  .stage.revealing .countdown{opacity:1}
-  .stage img,.stage canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
-  .stage canvas{touch-action:none} /* prevent page scroll while drawing */
-  .hidden{display:none!important}
-  .hint{font-size:12px;color:var(--ink2);margin-top:6px}
-  .meter{
-    height:6px;background:#111;border-radius:99px;overflow:hidden;border:1px solid #242932
+  .stage-inner{position:relative;width:100%;height:100%}
+  .fill{position:absolute;inset:0}
+  .fit{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+  .countdown{position:absolute;inset:0;display:grid;place-items:center;font-size:56px;font-weight:900;color:#fff;text-shadow:0 6px 24px #000a;pointer-events:none}
+  .center-msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px;color:var(--muted)}
+  .pill{display:inline-block;padding:6px 10px;border-radius:999px;background:#0c1118;border:1px solid #1e2633;color:var(--muted);font-size:12px;margin-top:6px}
+  .toolbar{
+    position:absolute;left:0;right:0;bottom:0;display:flex;gap:8px;align-items:center;justify-content:space-between;
+    padding:10px;background:linear-gradient(180deg,#0b0f1400,#0b0f14cc 40%,#0b0f14cc);backdrop-filter:blur(6px);border-top:1px solid #1b2230;
   }
-  .meter > span{
-    display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent2));
-    transition:width .2s ease-out
-  }
-  .results{
-    margin-top:10px;padding:10px;border-radius:12px;background:#11151a;border:1px solid #232a35
-  }
-  .score{font-size:22px;font-weight:800}
-  .pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#10161c;border:1px solid #27303b;color:var(--ink2);font-size:12px}
-  .flex{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-  .grow{flex:1 1 auto}
-  .center{text-align:center}
-  .footer{
-    position:fixed;left:0;right:0;bottom:0;padding:10px;background:linear-gradient(180deg,#0b0c0f00,#0b0c0fcc 30%,#0b0c0fcc);backdrop-filter:blur(8px);border-top:1px solid #1b2028
-  }
-  .footer .wrap{max-width:900px;margin:0 auto;display:flex;gap:10px;align-items:center;justify-content:space-between}
-  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
-  .thumb{width:96px;height:72px;border-radius:8px;border:1px solid #2a2f39;background:#0b0f14;object-fit:cover}
-  .ghost{opacity:.6}
-  .toggle{display:flex;align-items:center;gap:6px}
-  .toggle input{width:36px;height:24px}
-  @media (hover:none){
-    button,.btn{padding:12px 14px}
-  }
+  .left,.right{display:flex;gap:8px;align-items:center}
+  .slider{width:140px;accent-color:var(--accent)}
+  .meter{position:absolute;left:12px;right:12px;top:12px;height:6px;background:#0f141c;border:1px solid #1f2734;border-radius:99px;overflow:hidden;opacity:0;transition:.2s}
+  .meter > span{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--accent2),var(--accent));}
+  .meter.show{opacity:1}
+  .badge{padding:6px 10px;border-radius:999px;font-weight:800}
+  .good{background:#0f2b1b;color:var(--good)}
+  .ok{background:#2a2412;color:var(--warn)}
+  .bad{background:#2a1517;color:var(--bad)}
+
+  /* prevent page scroll while drawing */
+  canvas{touch-action:none}
+  .stage{overscroll-behavior:contain}
 </style>
 </head>
 <body>
-  <div class="app">
-    <header>
-      <div>
-        <h1>Memory Draw — 5-Second Flash</h1>
-        <div class="sub">See it for 5 seconds. Then draw from memory. Get a score.</div>
-      </div>
+<div class="app">
+  <header>
+    <div class="title">Memory Draw — One Screen</div>
+    <div class="hcontrols">
+      <label class="btn">
+        <input id="imgInput" type="file" accept="image/*">
+        Upload
+      </label>
+      <button id="randomBtn" class="btn">Random</button>
       <button id="startBtn" class="primary">Start</button>
-    </header>
+    </div>
+  </header>
 
-    <div class="card">
-      <div class="toolbar">
-        <div class="flex grow">
-          <label title="Upload a custom image">
-            <input id="imgInput" type="file" accept="image/*" class="hidden">
-            <span class="btn">Upload Image</span>
-          </label>
-          <button id="randomBtn">Random Simple Image</button>
-          <button id="clearBtn" class="warn">Clear Drawing</button>
-          <label class="toggle">
-            <input type="checkbox" id="eraserToggle">
-            <span>Eraser</span>
-          </label>
-        </div>
-        <div class="flex">
-          <label for="brush">Brush</label>
-          <input id="brush" type="range" min="2" max="28" value="10">
+  <div class="stage">
+    <div class="meter" id="meter"><span id="meterFill"></span></div>
+    <div class="stage-inner">
+      <!-- reveal image -->
+      <img id="revealImg" class="fit" alt="prompt" style="opacity:0;transition:.15s"/>
+      <div id="countdown" class="countdown" style="opacity:0">5</div>
+
+      <!-- drawing canvas -->
+      <canvas id="draw" class="fill" aria-label="Draw here" style="display:none"></canvas>
+
+      <!-- center message -->
+      <div id="message" class="center-msg">
+        <div>
+          <div style="font-size:18px;color:#d9e2f2;font-weight:800">Press Start to begin</div>
+          <div class="pill">You’ll see the image for 5 seconds, then draw from memory.</div>
         </div>
       </div>
 
-      <div class="row">
-        <div class="col">
-          <div class="stage" id="revealStage">
-            <img id="revealImg" alt="prompt image" />
-            <div class="countdown" id="countdown">5</div>
-          </div>
-          <div class="hint">Image shows for <b>5 seconds</b> once you press Start. Then it hides and you draw from memory.</div>
-          <div class="meter" aria-label="timer">
-            <span id="timerBar"></span>
-          </div>
-        </div>
-        <div class="col">
-          <div class="stage">
-            <canvas id="draw" aria-label="Draw here"></canvas>
-          </div>
-          <div class="flex" style="margin-top:8px">
-            <button id="gradeBtn">Grade my drawing</button>
-            <button id="restartBtn" class="ghost">Restart</button>
-            <div class="pill">Tip: Use your finger. Pinch-zoom not needed.</div>
-          </div>
-          <div id="results" class="results hidden">
-            <div class="flex" style="align-items:flex-start">
-              <img id="thumbOriginal" class="thumb" alt="original thumbnail">
-              <img id="thumbDraw" class="thumb" alt="drawing thumbnail">
-              <div class="grow">
-                <div class="score" id="scoreText">—</div>
-                <div id="verdict" class="hint"></div>
-              </div>
-            </div>
+      <!-- result view (same stage) -->
+      <canvas id="resultCanvas" class="fill" style="display:none"></canvas>
+      <div id="resultHUD" class="center-msg" style="display:none;align-content:center">
+        <div style="display:grid;gap:8px;justify-items:center">
+          <div id="scoreText" style="font-size:22px;font-weight:900">Score: —</div>
+          <div id="gradeBadge" class="badge">—</div>
+          <div id="verdict" style="font-size:12px;color:var(--muted)"></div>
+          <div style="display:flex;gap:8px;margin-top:6px">
+            <button id="viewToggle" class="btn">View: Overlay ▸</button>
+            <button id="againBtn" class="btn">Again</button>
           </div>
         </div>
       </div>
     </div>
 
-    <div class="footer">
-      <div class="wrap">
-        <div class="hint">Scoring compares <span class="mono">edge maps</span> of your drawing vs. the original using Dice similarity.</div>
-        <a id="saveBtn" class="btn" download="memory-draw.png">Save Drawing</a>
+    <!-- in-stage toolbar -->
+    <div class="toolbar">
+      <div class="left">
+        <button id="undoBtn" class="btn">Undo</button>
+        <button id="clearBtn" class="btn">Clear</button>
+        <label style="display:flex;align-items:center;gap:6px;color:var(--muted)">
+          Brush <input id="brush" class="slider" type="range" min="2" max="28" value="10">
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;color:var(--muted)">
+          <input id="eraser" type="checkbox"> Eraser
+        </label>
+      </div>
+      <div class="right">
+        <button id="gradeBtn" class="primary">Grade</button>
       </div>
     </div>
   </div>
+</div>
 
 <script>
 (function(){
-  const revealImg = document.getElementById('revealImg');
-  const countdownEl = document.getElementById('countdown');
-  const timerBar = document.getElementById('timerBar');
-  const startBtn = document.getElementById('startBtn');
+  // Elements
   const imgInput = document.getElementById('imgInput');
   const randomBtn = document.getElementById('randomBtn');
-  const clearBtn = document.getElementById('clearBtn');
-  const eraserToggle = document.getElementById('eraserToggle');
-  const brush = document.getElementById('brush');
-  const drawCanvas = document.getElementById('draw');
-  const gradeBtn = document.getElementById('gradeBtn');
-  const restartBtn = document.getElementById('restartBtn');
-  const results = document.getElementById('results');
-  const thumbOriginal = document.getElementById('thumbOriginal');
-  const thumbDraw = document.getElementById('thumbDraw');
-  const scoreText = document.getElementById('scoreText');
-  const verdict = document.getElementById('verdict');
-  const saveBtn = document.getElementById('saveBtn');
-  const revealStage = document.getElementById('revealStage');
+  const startBtn = document.getElementById('startBtn');
+  const revealImg = document.getElementById('revealImg');
+  const countdownEl = document.getElementById('countdown');
+  const message = document.getElementById('message');
+  const meter = document.getElementById('meter');
+  const meterFill = document.getElementById('meterFill');
 
+  const drawCanvas = document.getElementById('draw');
+  const resultCanvas = document.getElementById('resultCanvas');
+  const resultHUD = document.getElementById('resultHUD');
+  const scoreText = document.getElementById('scoreText');
+  const gradeBadge = document.getElementById('gradeBadge');
+  const verdict = document.getElementById('verdict');
+  const viewToggle = document.getElementById('viewToggle');
+  const againBtn = document.getElementById('againBtn');
+
+  const undoBtn = document.getElementById('undoBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const brush = document.getElementById('brush');
+  const eraser = document.getElementById('eraser');
+  const gradeBtn = document.getElementById('gradeBtn');
+
+  // State
   let displayMs = 5000;
   let revealTimer = null;
-  let revealProgress = 0;
   let imageReady = false;
   let sourceImageBitmap = null;
   let sourceDataURL = null;
+  let isDrawing = false;
+  let isErasing = false;
+  let path = [];
+  const paths = []; // for Undo
+  let lastW = 0, lastH = 0;
+  let resultViewMode = 0; // 0 overlay, 1 edges, 2 original, 3 your drawing
 
-  // Track last known width to avoid clearing on mobile URL bar hide/show
-  let lastCanvasCSSWidth = 0;
-
-  // HiDPI canvas setup with preservation
-  function fitCanvasToParentPreserve(){
-    const parent = drawCanvas.parentElement;
-    const rect = parent.getBoundingClientRect();
+  // Fixed full-screen sizing
+  function sizeCanvases(){
+    const stage = drawCanvas.parentElement; // stage-inner
+    const rect = stage.getBoundingClientRect();
     const cssW = Math.round(rect.width);
     const cssH = Math.round(rect.height);
     if(cssW === 0 || cssH === 0) return;
-
-    // Only redraw if width changed (ignore height-only changes from iOS address bar)
-    if(cssW === lastCanvasCSSWidth){
-      return;
-    }
-    lastCanvasCSSWidth = cssW;
-
+    if(cssW === lastW && cssH === lastH) return;
+    lastW = cssW; lastH = cssH;
     const dpr = Math.max(1, window.devicePixelRatio || 1);
+    [drawCanvas, resultCanvas].forEach(c => {
+      c.width = Math.floor(cssW * dpr);
+      c.height = Math.floor(cssH * dpr);
+      c.style.width = cssW + 'px';
+      c.style.height = cssH + 'px';
+      const ctx = c.getContext('2d');
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+    });
+    redrawAll();
+  }
 
-    // Save current drawing
-    const prev = document.createElement('canvas');
-    prev.width = drawCanvas.width;
-    prev.height = drawCanvas.height;
-    const pctx = prev.getContext('2d');
-    pctx.drawImage(drawCanvas, 0, 0);
-
-    // Resize
-    drawCanvas.width = Math.floor(cssW * dpr);
-    drawCanvas.height = Math.floor(cssH * dpr);
-    drawCanvas.style.width = cssW + 'px';
-    drawCanvas.style.height = cssH + 'px';
-
+  function redrawAll(){
     const ctx = drawCanvas.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#f5f7fb';
-    ctx.lineWidth = parseInt(brush.value,10);
-    ctx.globalCompositeOperation = isErasing ? 'destination-out' : 'source-over';
-
-    // Restore scaled drawing
-    if(prev.width && prev.height){
-      ctx.drawImage(prev, 0, 0, prev.width, prev.height, 0, 0, drawCanvas.width, drawCanvas.height);
+    ctx.clearRect(0,0,drawCanvas.width,drawCanvas.height);
+    ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#fff';
+    for(const p of paths){
+      ctx.lineWidth = p.w;
+      ctx.globalCompositeOperation = p.erase ? 'destination-out' : 'source-over';
+      ctx.beginPath();
+      for(let i=0;i<p.pts.length;i++){
+        const pt = p.pts[i];
+        if(i===0) ctx.moveTo(pt.x, pt.y);
+        else ctx.lineTo(pt.x, pt.y);
+      }
+      ctx.stroke();
     }
+    // reset composite mode
+    ctx.globalCompositeOperation = isErasing ? 'destination-out' : 'source-over';
+    ctx.lineWidth = parseInt(brush.value,10);
   }
 
-  function initialCanvasSetup(){
-    // Force an initial size & record width reference
-    lastCanvasCSSWidth = 0;
-    fitCanvasToParentPreserve();
-  }
-
-  function generateSimpleImage(){
-    const w = 512, h = 384;
+  function loadRandom(){
+    const w = 640, h = 480;
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
     const ctx = c.getContext('2d');
     ctx.fillStyle = '#0b0f14'; ctx.fillRect(0,0,w,h);
-
-    const choice = Math.floor(Math.random()*4);
-    if(choice === 0){
-      // Smiley
-      ctx.fillStyle = '#ffd166';
-      ctx.beginPath(); ctx.arc(w/2, h/2, 120, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(w/2-45,h/2-30,18,0,2*Math.PI); ctx.fill();
-      ctx.beginPath(); ctx.arc(w/2+45,h/2-30,18,0,2*Math.PI); ctx.fill();
-      ctx.lineWidth = 12; ctx.strokeStyle = '#111';
-      ctx.beginPath(); ctx.arc(w/2, h/2+10, 70, Math.PI*.15, Math.PI-.15); ctx.stroke();
-    } else if(choice === 1){
-      // House
-      ctx.fillStyle = '#06d6a0'; ctx.fillRect(0,h-80,w,80);
-      ctx.fillStyle = '#ef476f'; ctx.fillRect(w/2-90,h-160,180,120);
-      ctx.fillStyle = '#c63b5e'; ctx.beginPath();
-      ctx.moveTo(w/2-110,h-160); ctx.lineTo(w/2,h-240); ctx.lineTo(w/2+110,h-160); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#ffd166'; ctx.fillRect(w/2-25,h-120,50,80);
-      ctx.fillStyle = '#118ab2'; ctx.fillRect(w/2-70,h-140,40,40); ctx.fillRect(w/2+30,h-140,40,40);
-      ctx.fillStyle = '#ffd166'; ctx.beginPath(); ctx.arc(70,70,36,0,2*Math.PI); ctx.fill();
-    } else if(choice === 2){
-      // Tree
-      ctx.fillStyle = '#06d6a0'; ctx.fillRect(0,h-70,w,70);
-      ctx.fillStyle = '#8b5a2b'; ctx.fillRect(w/2-20,h-150,40,100);
-      ctx.fillStyle = '#2ecc71';
-      for(let i=0;i<5;i++){
-        ctx.beginPath();
-        ctx.arc(w/2 + Math.cos(i)*60, h-170 - i*18, 80 - i*8, 0, Math.PI*2);
-        ctx.fill();
-      }
-      ctx.fillStyle = '#fff'; for(let i=0;i<3;i++){
-        const x = 120 + i*160; const y = 80 + (i%2)*20;
-        ctx.beginPath(); ctx.arc(x,y,24,0,2*Math.PI); ctx.arc(x+28,y+6,20,0,2*Math.PI); ctx.arc(x-26,y+10,18,0,2*Math.PI); ctx.fill();
-      }
-    } else {
-      // Rocket
-      ctx.fillStyle = '#111827'; ctx.fillRect(0,0,w,h);
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(w/2,h/2-120); ctx.lineTo(w/2-40,h/2+40); ctx.lineTo(w/2+40,h/2+40); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#4cc3ff'; ctx.beginPath(); ctx.arc(w/2, h/2-30, 18, 0, 2*Math.PI); ctx.fill();
-      ctx.fillStyle = '#ef476f'; ctx.beginPath(); ctx.moveTo(w/2-40,h/2+40); ctx.lineTo(w/2-70,h/2+70); ctx.lineTo(w/2-20,h/2+60); ctx.closePath(); ctx.fill();
-      ctx.beginPath(); ctx.moveTo(w/2+40,h/2+40); ctx.lineTo(w/2+70,h/2+70); ctx.lineTo(w/2+20,h/2+60); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#fff'; for(let i=0;i<80;i++){ ctx.fillRect(Math.random()*w,Math.random()*h,1,1); }
-      const g = ctx.createLinearGradient(w/2,h/2+40,w/2,h/2+120); g.addColorStop(0,'#ffd166'); g.addColorStop(1,'#ff6b6b');
-      ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(w/2-16,h/2+40); ctx.lineTo(w/2,h/2+120); ctx.lineTo(w/2+16,h/2+40); ctx.closePath(); ctx.fill();
+    const theme = Math.floor(Math.random()*4);
+    if(theme===0){
+      ctx.fillStyle='#ffd166'; ctx.beginPath(); ctx.arc(w/2,h/2,140,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(w/2-50,h/2-35,20,0,6.28); ctx.fill();
+      ctx.beginPath(); ctx.arc(w/2+50,h/2-35,20,0,6.28); ctx.fill();
+      ctx.lineWidth=14; ctx.strokeStyle='#111'; ctx.beginPath(); ctx.arc(w/2,h/2+5,85,Math.PI*.15,Math.PI-.15); ctx.stroke();
+    }else if(theme===1){
+      ctx.fillStyle='#06d6a0'; ctx.fillRect(0,h-90,w,90);
+      ctx.fillStyle='#ef476f'; ctx.fillRect(w/2-110,h-190,220,150);
+      ctx.fillStyle='#c63b5e'; ctx.beginPath(); ctx.moveTo(w/2-130,h-190); ctx.lineTo(w/2,h-280); ctx.lineTo(w/2+130,h-190); ctx.closePath(); ctx.fill();
+      ctx.fillStyle='#ffd166'; ctx.fillRect(w/2-28,h-140,56,100);
+      ctx.fillStyle='#118ab2'; ctx.fillRect(w/2-80,h-160,50,50); ctx.fillRect(w/2+30,h-160,50,50);
+      ctx.fillStyle='#ffd166'; ctx.beginPath(); ctx.arc(80,80,40,0,6.28); ctx.fill();
+    }else if(theme===2){
+      ctx.fillStyle='#06d6a0'; ctx.fillRect(0,h-80,w,80);
+      ctx.fillStyle='#8b5a2b'; ctx.fillRect(w/2-24,h-180,48,120);
+      ctx.fillStyle='#2ecc71';
+      for(let i=0;i<5;i++){ ctx.beginPath(); ctx.arc(w/2 + Math.cos(i)*70, h-200 - i*20, 90 - i*10, 0, 6.28); ctx.fill(); }
+      ctx.fillStyle='#fff'; for(let i=0;i<3;i++){ const x=120+i*180, y=90+(i%2)*20; ctx.beginPath(); ctx.arc(x,y,26,0,6.28); ctx.arc(x+30,y+6,22,0,6.28); ctx.arc(x-26,y+10,20,0,6.28); ctx.fill(); }
+    }else{
+      ctx.fillStyle='#111827'; ctx.fillRect(0,0,w,h);
+      ctx.fillStyle='#fff'; ctx.beginPath(); ctx.moveTo(w/2,h/2-140); ctx.lineTo(w/2-50,h/2+40); ctx.lineTo(w/2+50,h/2+40); ctx.closePath(); ctx.fill();
+      ctx.fillStyle='#4cc3ff'; ctx.beginPath(); ctx.arc(w/2,h/2-50,20,0,6.28); ctx.fill();
+      ctx.fillStyle='#ef476f'; ctx.beginPath(); ctx.moveTo(w/2-50,h/2+40); ctx.lineTo(w/2-80,h/2+80); ctx.lineTo(w/2-20,h/2+70); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(w/2+50,h/2+40); ctx.lineTo(w/2+80,h/2+80); ctx.lineTo(w/2+20,h/2+70); ctx.closePath(); ctx.fill();
+      ctx.fillStyle='#fff'; for(let i=0;i<90;i++){ ctx.fillRect(Math.random()*w,Math.random()*h,1,1); }
+      const g=ctx.createLinearGradient(w/2,h/2+40,w/2,h/2+140); g.addColorStop(0,'#ffd166'); g.addColorStop(1,'#ff6b6b');
+      ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(w/2-18,h/2+40); ctx.lineTo(w/2,h/2+140); ctx.lineTo(w/2+18,h/2+40); ctx.closePath(); ctx.fill();
     }
     return c.toDataURL('image/png');
   }
 
-  async function loadSourceFromDataURL(url){
+  async function loadSource(url){
     sourceDataURL = url;
     const img = new Image();
-    img.src = url;
-    await img.decode();
-    const bmp = await createImageBitmap(img);
-    sourceImageBitmap = bmp;
-    revealImg.src = url;
+    img.src = url; await img.decode();
+    sourceImageBitmap = await createImageBitmap(img);
     imageReady = true;
-    thumbOriginal.src = url;
+    revealImg.src = url;
   }
 
-  function startReveal(){
+  // Flow
+  function enterReveal(){
     if(!imageReady){
-      loadSourceFromDataURL(generateSimpleImage()).then(() => startReveal());
+      loadSource(loadRandom()).then(enterReveal);
       return;
     }
-    results.classList.add('hidden');
-    revealStage.classList.add('revealing');
+    // reset UI in one screen
+    resultCanvas.style.display = 'none';
+    resultHUD.style.display = 'none';
+    drawCanvas.style.display = 'none';
+    message.style.display = 'none';
     revealImg.style.opacity = '1';
     countdownEl.style.opacity = '1';
-    let t0 = performance.now();
-    revealProgress = 0;
-    timerBar.style.width = '0%';
-    let lastSec = 6;
-    function tick(now){
-      const dt = now - t0;
-      revealProgress = Math.min(1, dt / displayMs);
-      timerBar.style.width = (revealProgress*100)+'%';
-      const secLeft = Math.ceil((displayMs - dt)/1000);
-      if(secLeft !== lastSec){
-        lastSec = secLeft;
-        countdownEl.textContent = Math.max(0, secLeft);
-      }
-      if(dt >= displayMs){
-        stopReveal();
+    meter.classList.add('show');
+    meterFill.style.width = '0%';
+    countdownEl.textContent = '5';
+
+    // run 5s timer
+    const t0 = performance.now();
+    cancelAnimationFrame(revealTimer);
+    function tick(t){
+      const elapsed = t - t0;
+      const p = Math.min(1, elapsed / displayMs);
+      meterFill.style.width = (p*100)+'%';
+      const left = Math.ceil((displayMs - elapsed)/1000);
+      countdownEl.textContent = Math.max(0,left);
+      if(elapsed >= displayMs){
+        exitRevealEnterDraw();
         return;
       }
       revealTimer = requestAnimationFrame(tick);
     }
-    cancelAnimationFrame(revealTimer);
     revealTimer = requestAnimationFrame(tick);
   }
 
-  function stopReveal(){
+  function exitRevealEnterDraw(){
     cancelAnimationFrame(revealTimer);
+    meter.classList.remove('show');
     countdownEl.style.opacity = '0';
     revealImg.style.opacity = '0';
-    revealStage.classList.remove('revealing');
+    // show drawing canvas
+    drawCanvas.style.display = 'block';
   }
 
   // Drawing
-  let drawing = false;
-  let lastX=0, lastY=0;
-  let isErasing = false;
-
-  function setBrush(){
+  function beginPath(e){
+    e.preventDefault();
+    isDrawing = true;
+    const {x,y} = pointerPos(e);
+    path = [{x,y}];
+    const p = { w: parseInt(brush.value,10), erase: isErasing, pts: path };
+    paths.push(p);
     const ctx = drawCanvas.getContext('2d');
-    ctx.lineWidth = parseInt(brush.value,10);
+    ctx.lineWidth = p.w;
+    ctx.globalCompositeOperation = p.erase ? 'destination-out' : 'source-over';
+    ctx.beginPath(); ctx.moveTo(x,y);
   }
-
-  function setEraser(on){
-    isErasing = on;
+  function drawMove(e){
+    if(!isDrawing) return;
+    const {x,y} = pointerPos(e);
+    path.push({x,y});
     const ctx = drawCanvas.getContext('2d');
-    ctx.globalCompositeOperation = isErasing ? 'destination-out' : 'source-over';
+    ctx.lineTo(x,y); ctx.stroke();
   }
+  function endPath(){ isDrawing = false; }
 
-  function getPos(e){
+  function pointerPos(e){
     const rect = drawCanvas.getBoundingClientRect();
     if(e.touches && e.touches[0]){
       return { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
@@ -363,161 +327,179 @@
     }
   }
 
-  function startDraw(e){
-    e.preventDefault();
-    drawing = true;
-    const p = getPos(e);
-    lastX = p.x; lastY = p.y;
-    const ctx = drawCanvas.getContext('2d');
-    ctx.beginPath(); ctx.moveTo(lastX, lastY);
+  function undo(){
+    paths.pop(); redrawAll();
   }
-  function moveDraw(e){
-    if(!drawing) return;
-    const p = getPos(e);
-    const ctx = drawCanvas.getContext('2d');
-    ctx.lineTo(p.x, p.y);
-    ctx.stroke();
-    lastX = p.x; lastY = p.y;
-  }
-  function endDraw(){
-    drawing = false;
+  function clearAll(){
+    paths.splice(0, paths.length);
+    redrawAll();
   }
 
-  // Edge detection & Dice score
-  function toGrayscale(imgData){
+  // Grading (edges + overlay render drawn in same canvas area)
+  function toGray(imgData){
     const d = imgData.data;
     for(let i=0;i<d.length;i+=4){
-      const r=d[i], g=d[i+1], b=d[i+2];
-      const y = (0.2126*r + 0.7152*g + 0.0722*b);
+      const y = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
       d[i]=d[i+1]=d[i+2]=y;
     }
     return imgData;
   }
-  function sobelEdges(grayData, w, h){
-    const d = grayData.data;
-    const out = new Uint8ClampedArray(w*h);
-    function idx(x,y){ return (y*w + x)*4; }
+  function sobel(gray,w,h){
+    const d = gray.data, out = new Uint8ClampedArray(w*h);
+    const idx=(x,y)=> (y*w+x)*4;
     for(let y=1;y<h-1;y++){
       for(let x=1;x<w-1;x++){
-        const gx =
-          -d[idx(x-1,y-1)] -2*d[idx(x-1,y)] -d[idx(x-1,y+1)] +
-           d[idx(x+1,y-1)] +2*d[idx(x+1,y)] + d[idx(x+1,y+1)];
-        const gy =
-          -d[idx(x-1,y-1)] -2*d[idx(x,y-1)] -d[idx(x+1,y-1)] +
-           d[idx(x-1,y+1)] +2*d[idx(x,y+1)] + d[idx(x+1,y+1)];
+        const gx = -d[idx(x-1,y-1)] -2*d[idx(x-1,y)] -d[idx(x-1,y+1)]
+                   +d[idx(x+1,y-1)] +2*d[idx(x+1,y)] + d[idx(x+1,y+1)];
+        const gy = -d[idx(x-1,y-1)] -2*d[idx(x,y-1)] -d[idx(x+1,y-1)]
+                   +d[idx(x-1,y+1)] +2*d[idx(x,y+1)] + d[idx(x+1,y+1)];
         const mag = Math.sqrt(gx*gx + gy*gy);
-        out[y*w + x] = mag>80 ? 255 : 0;
+        out[y*w+x] = mag>80 ? 255 : 0;
       }
     }
     return out;
   }
-  function diceSimilarity(a, b){
+  function dice(a,b){
     let inter=0, ca=0, cb=0;
     for(let i=0;i<a.length;i++){
-      const A = a[i] > 0 ? 1 : 0;
-      const B = b[i] > 0 ? 1 : 0;
-      inter += (A & B);
-      ca += A; cb += B;
+      const A=a[i]>0?1:0, B=b[i]>0?1:0;
+      inter += (A & B); ca += A; cb += B;
     }
-    if(ca+cb === 0) return 1;
-    return (2*inter) / (ca + cb);
+    if(ca+cb===0) return 1;
+    return (2*inter)/(ca+cb);
   }
-  function imageBitmapToCanvas(bmp, w, h){
-    const c = document.createElement('canvas');
-    c.width = w; c.height = h;
-    const ctx = c.getContext('2d');
-    ctx.drawImage(bmp, 0, 0, w, h);
-    return c;
-  }
-  function getEdgeMapFromCanvas(cnv){
-    const w = 256, h = 192;
-    const tmp = document.createElement('canvas');
-    tmp.width = w; tmp.height = h;
-    const tctx = tmp.getContext('2d');
-    tctx.drawImage(cnv, 0, 0, w, h);
-    const imgData = tctx.getImageData(0,0,w,h);
-    const gray = toGrayscale(imgData);
-    const edges = sobelEdges(gray,w,h);
-    return {w,h,edges,thumb: tmp.toDataURL('image/png')};
-  }
-  async function gradeDrawing(){
-    if(!sourceImageBitmap && !sourceDataURL){
-      await loadSourceFromDataURL(generateSimpleImage());
+  function renderOverlayInResult(srcEdges, drawEdges, w, h, mode){
+    const ctx = resultCanvas.getContext('2d');
+    ctx.clearRect(0,0,resultCanvas.width,resultCanvas.height);
+    // fit to canvas keeping aspect: letterbox
+    const R = Math.min(resultCanvas.width/w, resultCanvas.height/h);
+    const WW = Math.floor(w*R), HH = Math.floor(h*R);
+    const ox = Math.floor((resultCanvas.width - WW)/2);
+    const oy = Math.floor((resultCanvas.height - HH)/2);
+
+    const imgData = ctx.createImageData(WW, HH);
+    for(let j=0;j<h;j++){
+      for(let i=0;i<w;i++){
+        const src = srcEdges[j*w+i] > 0;
+        const drw = drawEdges[j*w+i] > 0;
+        let r=0,g=0,b=0,a=255;
+        if(mode===0){ // overlay: green match, red extra, gray hint
+          const match = src && drw, extra = drw && !src, hint = src && !drw;
+          if(match){ g=220; }
+          else if(extra){ r=220; }
+          else if(hint){ r=g=b=50; a=255; }
+          else { r=g=b=0; a=255; }
+        } else if(mode===1){ // edges only
+          r=g=b= src ? 255 : 0;
+        } else if(mode===2){ // original thumbnail
+          // Just show src edges as white with dark bg
+          r=g=b= src ? 255 : 20;
+        } else { // your drawing edges
+          r=g=b= drw ? 255 : 20;
+        }
+        const di = ((j*WW)/h|0)*WW + ((i*WW)/w|0);
+        const p = di*4;
+        imgData.data[p]=r; imgData.data[p+1]=g; imgData.data[p+2]=b; imgData.data[p+3]=a;
+      }
     }
-    const w = 256, h = 192;
-    const srcCanvas = imageBitmapToCanvas(sourceImageBitmap, w, h);
-    const srcMap = getEdgeMapFromCanvas(srcCanvas);
-    const drawMap = getEdgeMapFromCanvas(drawCanvas);
-    const dice = diceSimilarity(srcMap.edges, drawMap.edges);
-    const pct = Math.round(dice * 100);
-    let msg = '';
-    if(pct >= 85) msg = 'Photographic! 🧠📸';
-    else if(pct >= 70) msg = 'Super close — impressive recall!';
-    else if(pct >= 55) msg = 'Nice work — your memory’s got style.';
-    else if(pct >= 40) msg = 'Hints of the original — keep at it.';
-    else msg = 'Abstract expressionism. Bold choice! 🎨';
-    scoreText.textContent = `Score: ${pct}% similarity`;
-    verdict.textContent = msg;
-    results.classList.remove('hidden');
-    thumbOriginal.src = srcMap.thumb;
-    thumbDraw.src = drawMap.thumb;
+    ctx.putImageData(imgData, ox, oy);
   }
 
-  // Event wiring
-  brush.addEventListener('input', setBrush);
-  eraserToggle.addEventListener('change', (e)=> setEraser(e.target.checked));
-  clearBtn.addEventListener('click', ()=>{
-    const ctx = drawCanvas.getContext('2d');
-    ctx.clearRect(0,0,drawCanvas.width,drawCanvas.height);
-  });
-  gradeBtn.addEventListener('click', gradeDrawing);
-  restartBtn.addEventListener('click', ()=>{
-    results.classList.add('hidden');
-    startReveal();
-  });
-  startBtn.addEventListener('click', startReveal);
-  randomBtn.addEventListener('click', async ()=>{
-    await loadSourceFromDataURL(generateSimpleImage());
-    startReveal();
-  });
+  async function grade(){
+    // downscale both to fixed size for consistency
+    const W = 256, H = 192;
+    // src
+    const sc = document.createElement('canvas'); sc.width=W; sc.height=H;
+    const sctx = sc.getContext('2d');
+    sctx.drawImage(sourceImageBitmap, 0, 0, W, H);
+    const srcEdges = sobel(toGray(sctx.getImageData(0,0,W,H)), W, H);
+
+    // draw
+    const dc = document.createElement('canvas'); dc.width=W; dc.height=H;
+    const dctx = dc.getContext('2d');
+    dctx.drawImage(drawCanvas, 0, 0, W, H);
+    const drawEdges = sobel(toGray(dctx.getImageData(0,0,W,H)), W, H);
+
+    const sim = dice(srcEdges, drawEdges);
+    const pct = Math.round(sim*100);
+
+    scoreText.textContent = `Score: ${pct}%`;
+    let label='Try Again', cls='bad', txt='Abstract expressionism. Bold choice! 🎨';
+    if(pct>=90){label='A'; cls='good'; txt='Photographic recall!';}
+    else if(pct>=80){label='B'; cls='good'; txt='Very close — great job!';}
+    else if(pct>=65){label='C'; cls='ok'; txt='Solid resemblance.';}
+    else if(pct>=50){label='D'; cls='ok'; txt='Hints of the original. Keep at it.';}
+    gradeBadge.textContent = label;
+    gradeBadge.className = 'badge ' + cls;
+    verdict.textContent = txt;
+
+    drawCanvas.style.display='none';
+    resultCanvas.style.display='block';
+    resultHUD.style.display='grid';
+    resultViewMode = 0;
+    viewToggle.textContent = 'View: Overlay ▸';
+    renderOverlayInResult(srcEdges, drawEdges, W, H, resultViewMode);
+  }
+
+  // Events
+  window.addEventListener('resize', sizeCanvases);
+  if(window.visualViewport) visualViewport.addEventListener('resize', sizeCanvases);
+
   imgInput.addEventListener('change', async (e)=>{
-    if(!e.target.files || !e.target.files[0]) return;
-    const file = e.target.files[0];
-    const url = URL.createObjectURL(file);
-    await loadSourceFromDataURL(url);
+    const f = e.target.files && e.target.files[0];
+    if(!f) return;
+    const url = URL.createObjectURL(f);
+    await loadSource(url);
     URL.revokeObjectURL(url);
-    startReveal();
   });
-  document.querySelector('label[title="Upload a custom image"]').addEventListener('click', ()=> imgInput.click());
+  randomBtn.addEventListener('click', async ()=>{
+    await loadSource(loadRandom());
+  });
+  startBtn.addEventListener('click', enterReveal);
 
-  // Pointer listeners
-  const c = drawCanvas;
-  c.addEventListener('mousedown', startDraw);
-  c.addEventListener('mousemove', moveDraw);
-  window.addEventListener('mouseup', endDraw);
-  c.addEventListener('touchstart', startDraw, {passive:false});
-  c.addEventListener('touchmove', moveDraw, {passive:false});
-  window.addEventListener('touchend', endDraw);
+  // drawing
+  brush.addEventListener('input', ()=>{
+    const ctx = drawCanvas.getContext('2d');
+    ctx.lineWidth = parseInt(brush.value,10);
+  });
+  eraser.addEventListener('change', ()=>{ isErasing = eraser.checked; });
+  undoBtn.addEventListener('click', undo);
+  clearBtn.addEventListener('click', clearAll);
 
-  // Save link
-  function refreshSaveLink(){ saveBtn.href = drawCanvas.toDataURL('image/png'); }
-  setInterval(refreshSaveLink, 1000);
+  drawCanvas.addEventListener('mousedown', beginPath);
+  drawCanvas.addEventListener('mousemove', drawMove);
+  window.addEventListener('mouseup', endPath);
+  drawCanvas.addEventListener('touchstart', beginPath, {passive:false});
+  drawCanvas.addEventListener('touchmove', drawMove, {passive:false});
+  window.addEventListener('touchend', endPath);
 
-  // Handle viewport changes without clearing strokes
-  function handleViewportChange(){
-    // debounce a bit
-    clearTimeout(handleViewportChange._t);
-    handleViewportChange._t = setTimeout(fitCanvasToParentPreserve, 50);
-  }
-  window.addEventListener('resize', handleViewportChange);
-  window.addEventListener('orientationchange', handleViewportChange);
-  if(window.visualViewport){
-    visualViewport.addEventListener('resize', handleViewportChange);
-  }
+  gradeBtn.addEventListener('click', grade);
+  againBtn.addEventListener('click', ()=>{
+    resultCanvas.style.display='none';
+    resultHUD.style.display='none';
+    paths.splice(0, paths.length);
+    redrawAll();
+    message.style.display='grid';
+  });
+  viewToggle.addEventListener('click', ()=>{
+    resultViewMode = (resultViewMode + 1) % 4;
+    const labels = ['Overlay ▸','Edges ▸','Original ▸','Your edges ▸'];
+    viewToggle.textContent = 'View: ' + labels[resultViewMode];
+    // Recompute last edges quickly (store? we recompute for simplicity)
+    const W=256,H=192;
+    const sc=document.createElement('canvas'); sc.width=W; sc.height=H;
+    const sctx=sc.getContext('2d'); sctx.drawImage(sourceImageBitmap,0,0,W,H);
+    const srcEdges=sobel(toGray(sctx.getImageData(0,0,W,H)),W,H);
+    const dc=document.createElement('canvas'); dc.width=W; dc.height=H;
+    const dctx=dc.getContext('2d'); dctx.drawImage(drawCanvas,0,0,W,H);
+    const drawEdges=sobel(toGray(dctx.getImageData(0,0,W,H)),W,H);
+    renderOverlayInResult(srcEdges, drawEdges, W, H, resultViewMode);
+  });
 
-  // First load
-  initialCanvasSetup();
-  (async ()=>{ await loadSourceFromDataURL(generateSimpleImage()); })();
+  // Init
+  sizeCanvases();
+  // Preload a random so Start works out of the box (still hidden until Start)
+  loadSource(loadRandom()).then(()=>{});
 })();
 </script>
 </body>
