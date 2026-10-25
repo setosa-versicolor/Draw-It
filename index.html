@@ -375,21 +375,22 @@ function createSim(lv, strokes){
     const gobs=lv.goblins||[];
     for(let gi=0; gi<gobs.length; gi++){
       const g=gobs[gi];
-      if(st.t>=st.gobNext[gi]){ st.gobNext[gi]+=g.every; st.throwT[gi]=st.t; st.spears.push({x:g.x+g.dir*12, y:g.y-30, vx:g.v[0], vy:g.v[1], stuck:false, age:0}); }
+      if(st.t>=st.gobNext[gi]){ st.gobNext[gi]+=g.every; st.throwT[gi]=st.t; st.spears.push({x:g.x+g.dir*12, y:g.y-30, vx:g.v[0], vy:g.v[1], stuck:false, age:0, g:gi}); st.events.push({type:'throw', gi}); }
       if((st.x-g.x)**2+(st.y-(g.y-16))**2 < (R+15)**2){ finish('crash','Bonked a goblin.'); return; }
     }
     for(const s of st.spears){
-      s.age+=DT; if(s.stuck) continue;
+      s.age+=DT; if(s.stuck || s.gone) continue;
+      if(s.y>H+20 || s.x<-30 || s.x>W+30){ s.gone=true; st.events.push({type:'miss', gi:s.g}); continue; }
       s.vy+=SPEAR_G*DT; s.x+=s.vx*DT; s.y+=s.vy*DT;
       for(const g of segs){
         if(g.kind==='spike') continue;
         let u=((s.x-g.ax)*g.dx+(s.y-g.ay)*g.dy)/g.len2; u=u<0?0:u>1?1:u;
-        if((s.x-g.ax-g.dx*u)**2+(s.y-g.ay-g.dy*u)**2 < 9){ s.stuck=true; s.stuckAt=s.age; break; }
+        if((s.x-g.ax-g.dx*u)**2+(s.y-g.ay-g.dy*u)**2 < 9){ s.stuck=true; s.stuckAt=s.age; st.events.push({type:'miss', gi:s.g}); break; }
       }
       if(s.stuck) continue;
       const L=Math.hypot(s.vx,s.vy)||1, tx=s.x-s.vx/L*SPEAR_LEN, ty=s.y-s.vy/L*SPEAR_LEN;
       const ex=s.x-tx, ey=s.y-ty; let u=((st.x-tx)*ex+(st.y-ty)*ey)/(ex*ex+ey*ey); u=u<0?0:u>1?1:u;
-      if((st.x-tx-ex*u)**2+(st.y-ty-ey*u)**2 < (R+2)**2){ finish('crash','Speared!'); return; }
+      if((st.x-tx-ex*u)**2+(st.y-ty-ey*u)**2 < (R+2)**2){ st.killer=s.g; finish('crash','Speared!'); return; }
     }
     if(st.spears.length>24 || (st.tick%60===0)) st.spears=st.spears.filter(s=>s.age<7 && s.y<H+60 && s.x>-60 && s.x<W+60);
     // a portal pauses the page; the game plays its world, then calls exitPortal or failPortal
@@ -837,7 +838,7 @@ function autoplay(kind, seed, nStars){
 }
 
 // Exposed for automated level checks; harmless in play.
-window.InkRider = {LEVELS, SUBLEVELS, simulate, createSim, makeDaily, dayNumber, WORLDS, autoplay, autopilot, seedOf, get world(){ return world; }};
+window.InkRider = {LEVELS, SUBLEVELS, simulate, createSim, makeDaily, dayNumber, WORLDS, autoplay, autopilot, seedOf, get world(){ return world; }, get sim(){ return sim; }};
 
 /* ================= Storage ================= */
 const KEY='inkrider:v1';
@@ -879,6 +880,44 @@ function tone(freq, dur, type='triangle', vol=0.05, slide=0){
     o.type=type; o.frequency.setValueAtTime(freq,t); if(slide) o.frequency.exponentialRampToValueAtTime(freq*slide,t+dur);
     g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
     o.connect(g).connect(actx.destination); o.start(t); o.stop(t+dur+0.02);
+  }catch(e){}
+}
+// Goblin voices: a buzzy sawtooth through two vowel-shaped filters, with a pitch glide per word.
+const GOBLIN_WORDS = {
+  hyah:{dur:0.26, f:[1.3,0.8], vow:[[820,1300],[680,1120]], breath:true, vol:1},
+  grah:{dur:0.34, f:[0.95,0.72], vow:[[640,1080],[720,1180]], growl:34, vol:1},
+  hup: {dur:0.15, f:[1.05,1.35], vow:[[420,980],[330,860]], breath:true, vol:0.9},
+  aww: {dur:0.8,  f:[1.2,0.55], vow:[[620,980],[520,840]], vib:6, vol:0.8},
+  heh: {dur:0.1,  f:[1.45,1.6], vow:[[520,1750],[480,1700]], breath:true, vol:0.7},
+};
+function goblinVoice(word, pitch, delay=0){
+  if(save.muted) return;
+  try{
+    actx = actx || new (window.AudioContext||window.webkitAudioContext)();
+    if(actx.state==='suspended') actx.resume();
+    const s=GOBLIN_WORDS[word], t=actx.currentTime+delay, end=t+s.dur;
+    const o=actx.createOscillator(); o.type='sawtooth';
+    o.frequency.setValueAtTime(pitch*s.f[0],t); o.frequency.exponentialRampToValueAtTime(pitch*s.f[1],end);
+    const extras=[];
+    if(s.vib){ const l=actx.createOscillator(), lg=actx.createGain(); l.frequency.value=s.vib; lg.gain.value=pitch*0.05; l.connect(lg).connect(o.frequency); extras.push(l); }
+    let src=o;
+    if(s.growl){ const am=actx.createGain(), l=actx.createOscillator(), lg=actx.createGain(); am.gain.value=0.6; l.frequency.value=s.growl; lg.gain.value=0.45; l.connect(lg).connect(am.gain); o.connect(am); src=am; extras.push(l); }
+    const env=actx.createGain(); env.gain.setValueAtTime(0.0001,t); env.gain.exponentialRampToValueAtTime(0.16*s.vol,t+0.025); env.gain.exponentialRampToValueAtTime(0.0001,end);
+    for(let k=0;k<2;k++){
+      const bp=actx.createBiquadFilter(); bp.type='bandpass'; bp.Q.value=5;
+      bp.frequency.setValueAtTime(s.vow[0][k],t); bp.frequency.linearRampToValueAtTime(s.vow[1][k],end);
+      const fg=actx.createGain(); fg.gain.value=k?2.2:3.2; src.connect(bp).connect(fg).connect(env);
+    }
+    env.connect(actx.destination);
+    o.start(t); o.stop(end+0.05); extras.forEach(x=>{ x.start(t); x.stop(end+0.05); });
+    if(s.breath){
+      // the breathy 'h' at the front of the word
+      const n=Math.floor(actx.sampleRate*0.07), buf=actx.createBuffer(1,n,actx.sampleRate), d=buf.getChannelData(0);
+      for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
+      const ns=actx.createBufferSource(), hp=actx.createBiquadFilter(), ng=actx.createGain();
+      ns.buffer=buf; hp.type='highpass'; hp.frequency.value=1600; ng.gain.value=0.05*s.vol;
+      ns.connect(hp).connect(ng).connect(actx.destination); ns.start(t);
+    }
   }catch(e){}
 }
 const sfx = {
@@ -976,7 +1015,18 @@ function stopRide(){
 function handleEvents(){
   const ev=sim.st.events; sim.st.events=[];
   for(const e of ev){
-    if(e.type==='portal'){
+    if(e.type==='throw' || e.type==='miss'){
+      // goblins shout when they throw and sulk when a spear misses; voices are spaced so a fast thrower doesn't drone
+      const m = sim.mood || (sim.mood={sad:[],happy:[],voice:[]});
+      const now=performance.now()/1000, pitch=300+e.gi*85;
+      if(e.type==='throw'){
+        if(now-(m.voice[e.gi]||-9)>0.9){ m.voice[e.gi]=now; goblinVoice(['hyah','grah','hup'][Math.floor(Math.random()*3)], pitch*(0.95+Math.random()*0.1)); }
+      } else {
+        m.sad[e.gi]=now;
+        if(now-(m.voice[e.gi]||-9)>1.4){ m.voice[e.gi]=now; goblinVoice('aww', pitch); }
+      }
+    }
+    else if(e.type==='portal'){
       const p=level.portals[e.i]; sfx.portal();
       warp={dir:'in', t:0, x:p.x, y:p.y, i:e.i};
     }
@@ -990,6 +1040,12 @@ function handleEvents(){
       ragdoll=[{k:'sled',x,y,vx:vx*0.6+r()*80,vy:vy*0.5-120,a:riderAngle,va:r()*12},
                {k:'body',x,y:y-6,vx:vx*0.8+r()*120,vy:vy*0.4-320,a:riderAngle,va:r()*16}];
       if(world){ ragdoll=null; shake=6; }
+      if(sim.st.killer!=null){
+        // the goblin who landed it is very pleased with itself
+        const m = sim.mood || (sim.mood={sad:[],happy:[],voice:[]}), gi=sim.st.killer, pitch=300+gi*85;
+        m.happy[gi]=performance.now()/1000; m.sad[gi]=null;
+        goblinVoice('heh', pitch*1.1, 0.15); goblinVoice('heh', pitch*1.2, 0.3); goblinVoice('heh', pitch*1.3, 0.45);
+      }
       noteWipeout(e.reason, world ? 'Try the world again, or tap Stop to tweak your track.' : 'Tap Stop to tweak your track.');
       if(world) $('retryWorldBtn').hidden=false;
     }
@@ -1866,12 +1922,18 @@ function drawGoblin3D(g,i,t){
   else if(since<0.45) arm=-1.6+(since-0.12)/0.33*1.1;       // follow-through, settling
   else arm=-0.5+Math.sin(t*2+i)*0.08;
   const holding = !(since<0.45 && since>=0) || until<0.4;
-  const crouch = until<0.4 ? (1-until/0.4)*4 : since<0.2 ? 4-since*20 : 0;
+  // mood: smug after a hit, sulking after a miss, furious while winding up
+  const now=performance.now()/1000, m=sim&&sim.mood;
+  const happyK = m && m.happy[i]!=null ? now-m.happy[i] : 99, sadK = m && m.sad[i]!=null ? now-m.sad[i] : 99;
+  const happy = happyK<4, sad = !happy && sadK<1.1, madK = (!happy && !sad && until<0.45) ? 1-until/0.45 : 0;
+  let crouch = until<0.4 ? (1-until/0.4)*4 : since<0.2 ? 4-since*20 : 0;
+  if(sad) crouch+=3*Math.min(1,sadK*4);
   const breathe=Math.sin(t*3+i*1.7)*1.2;
   const blink = ((t+i*1.3)%3.7)<0.12;
   const look = sim ? Math.max(-1,Math.min(1,(sim.st.x-g.x)*g.dir/200)) : 0.4;
   ctx.save(); ctx.translate(g.x,g.y);
   ctx.fillStyle=V.shadow; ctx.beginPath(); ctx.ellipse(3,1,20,4,0,0,7); ctx.fill();
+  if(happy) ctx.translate(0,-Math.abs(Math.sin(happyK*11))*6*Math.max(0,1-happyK/4));
   ctx.scale(g.dir*1.35,1.35);
   ctx.lineCap='round'; ctx.lineJoin='round';
   const hipY=-12+crouch*0.6, chestY=-26+crouch+breathe*0.3;
@@ -1887,20 +1949,51 @@ function drawGoblin3D(g,i,t){
   ctx.fillStyle=tg; ctx.beginPath(); ctx.moveTo(-6,chestY); ctx.lineTo(6,chestY); ctx.lineTo(8,hipY+2); ctx.lineTo(-8,hipY+2); ctx.closePath(); ctx.fill();
   ctx.fillStyle=V.belt; ctx.fillRect(-8,hipY-2,16,3);
   // head: big, pointy ears, eyes that track the rider
-  const hx=1, hy=chestY-9+breathe*0.4;
+  const hx=1+(madK>0.5?Math.sin(t*70)*0.6*madK:0), hy=chestY-9+breathe*0.4;
+  const earTip = sad ? 6 : happy ? -12 : -9;          // ears droop when sad, perk up when pleased
   ctx.fillStyle=V.goblinDark;
-  ctx.beginPath(); ctx.moveTo(hx-7,hy-2); ctx.lineTo(hx-17,hy-9); ctx.lineTo(hx-6,hy+2); ctx.closePath(); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(hx+7,hy-2); ctx.lineTo(hx+17,hy-9); ctx.lineTo(hx+6,hy+2); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(hx-7,hy-2); ctx.lineTo(hx-17,hy+earTip); ctx.lineTo(hx-6,hy+2); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(hx+7,hy-2); ctx.lineTo(hx+17,hy+earTip); ctx.lineTo(hx+6,hy+2); ctx.closePath(); ctx.fill();
   const hg=ctx.createRadialGradient(hx-3,hy-4,1,hx,hy,10); hg.addColorStop(0,V.goblin); hg.addColorStop(1,V.goblinDark);
   ctx.fillStyle=hg; ctx.beginPath(); ctx.ellipse(hx,hy,9,8,0,0,7); ctx.fill();
-  if(blink){ ctx.strokeStyle=V.edge; ctx.lineWidth=1.4; ctx.beginPath(); ctx.moveTo(hx,hy-1); ctx.lineTo(hx+3,hy-1); ctx.moveTo(hx+4.5,hy-1); ctx.lineTo(hx+7.5,hy-1); ctx.stroke(); }
-  else {
-    ctx.fillStyle='#fff8e0'; ctx.beginPath(); ctx.arc(hx+1.5,hy-1,2.4,0,7); ctx.arc(hx+6,hy-1,2.4,0,7); ctx.fill();
-    ctx.fillStyle=V.edge; ctx.beginPath(); ctx.arc(hx+1.5+look*0.9,hy-0.8,1.1,0,7); ctx.arc(hx+6+look*0.9,hy-0.8,1.1,0,7); ctx.fill();
+  if(madK>0){ ctx.fillStyle=`rgba(225,45,30,${0.5*madK})`; ctx.beginPath(); ctx.ellipse(hx,hy,9,8,0,0,7); ctx.fill(); }
+  const white='#fff8e0', ink=V.edge;
+  ctx.strokeStyle=ink; ctx.lineCap='round';
+  if(happy){
+    // eyes squeezed shut with glee, big toothy grin
+    ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(hx+1.5,hy,2.2,Math.PI*1.1,Math.PI*1.9); ctx.moveTo(hx+4,hy); ctx.arc(hx+6,hy,2.2,Math.PI*1.1,Math.PI*1.9); ctx.stroke();
+    ctx.fillStyle=ink; ctx.beginPath(); ctx.moveTo(hx-0.5,hy+2.5); ctx.quadraticCurveTo(hx+4,hy+9,hx+8.5,hy+2.5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle=white; ctx.fillRect(hx+1,hy+2.6,1.5,1.6); ctx.fillRect(hx+3.4,hy+2.8,1.5,1.6); ctx.fillRect(hx+5.8,hy+2.6,1.5,1.6);
+  } else if(sad){
+    // big worried eyes looking down, brows tilted up in the middle, a frown and a tear
+    ctx.fillStyle=white; ctx.beginPath(); ctx.arc(hx+1.5,hy-0.5,2.7,0,7); ctx.arc(hx+6,hy-0.5,2.7,0,7); ctx.fill();
+    ctx.fillStyle=ink; ctx.beginPath(); ctx.arc(hx+1.5,hy+0.8,1.2,0,7); ctx.arc(hx+6,hy+0.8,1.2,0,7); ctx.fill();
+    ctx.lineWidth=1.4; ctx.beginPath(); ctx.moveTo(hx-1,hy-3.6); ctx.lineTo(hx+3.2,hy-5.8); ctx.moveTo(hx+8.5,hy-3.6); ctx.lineTo(hx+4.3,hy-5.8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(hx+1.2,hy+6); ctx.quadraticCurveTo(hx+4,hy+3.6,hx+6.8,hy+6); ctx.stroke();
+    const ty=hy+1.5+Math.min(9,sadK*14);
+    ctx.fillStyle='#8fd3ff'; ctx.globalAlpha=Math.max(0,1-sadK); ctx.beginPath(); ctx.moveTo(hx-0.5,ty-2.5); ctx.quadraticCurveTo(hx+1.2,ty+0.5,hx-0.5,ty+1); ctx.quadraticCurveTo(hx-2.2,ty+0.5,hx-0.5,ty-2.5); ctx.fill(); ctx.globalAlpha=1;
+  } else if(madK>0){
+    // furious: brows slammed down, squinting, snarling with teeth bared, a popping vein
+    ctx.fillStyle=white; ctx.beginPath(); ctx.ellipse(hx+1.5,hy-0.6,2.4,1.3-madK*0.4,0,0,7); ctx.ellipse(hx+6,hy-0.6,2.4,1.3-madK*0.4,0,0,7); ctx.fill();
+    ctx.fillStyle='#b3201a'; ctx.beginPath(); ctx.arc(hx+1.7+look*0.6,hy-0.6,0.9,0,7); ctx.arc(hx+6.2+look*0.6,hy-0.6,0.9,0,7); ctx.fill();
+    ctx.lineWidth=1.6+madK; ctx.beginPath(); ctx.moveTo(hx-1.5,hy-6.2); ctx.lineTo(hx+3.6,hy-2.2); ctx.moveTo(hx+9,hy-6.2); ctx.lineTo(hx+4.6,hy-2.2); ctx.stroke();
+    const open=1.5+madK*2.8;
+    ctx.fillStyle=ink; ctx.beginPath(); ctx.moveTo(hx-0.5,hy+3); ctx.lineTo(hx+8.5,hy+3); ctx.lineTo(hx+7.5,hy+3+open); ctx.lineTo(hx+0.5,hy+3+open); ctx.closePath(); ctx.fill();
+    ctx.fillStyle=white; ctx.beginPath(); for(let k=0;k<4;k++){ const x0=hx+k*2.2; ctx.moveTo(x0,hy+3); ctx.lineTo(x0+1.1,hy+4.6); ctx.lineTo(x0+2.2,hy+3); } ctx.fill();
+    ctx.beginPath(); for(let k=0;k<3;k++){ const x0=hx+1+k*2.2; ctx.moveTo(x0,hy+3+open); ctx.lineTo(x0+1.1,hy+1.8+open); ctx.lineTo(x0+2.2,hy+3+open); } ctx.fill();
+    if(madK>0.4){ ctx.strokeStyle='#e3261c'; ctx.lineWidth=1.3; const vx0=hx+8, vy0=hy-8, k=1+Math.sin(t*30)*0.12;
+      ctx.beginPath(); ctx.arc(vx0-1.6*k,vy0-1.6*k,1.6*k,0,Math.PI/2); ctx.moveTo(vx0+3.2*k,vy0-1.6*k); ctx.arc(vx0+1.6*k,vy0-1.6*k,1.6*k,0,Math.PI/2,false);
+      ctx.moveTo(vx0,vy0+3.2*k); ctx.arc(vx0-1.6*k,vy0+1.6*k,1.6*k,-Math.PI/2,0); ctx.moveTo(vx0+1.6*k,vy0+3.2*k); ctx.arc(vx0+1.6*k,vy0+1.6*k,1.6*k,Math.PI,Math.PI*1.5); ctx.stroke(); }
+  } else {
+    if(blink){ ctx.lineWidth=1.4; ctx.beginPath(); ctx.moveTo(hx,hy-1); ctx.lineTo(hx+3,hy-1); ctx.moveTo(hx+4.5,hy-1); ctx.lineTo(hx+7.5,hy-1); ctx.stroke(); }
+    else {
+      ctx.fillStyle=white; ctx.beginPath(); ctx.arc(hx+1.5,hy-1,2.4,0,7); ctx.arc(hx+6,hy-1,2.4,0,7); ctx.fill();
+      ctx.fillStyle=ink; ctx.beginPath(); ctx.arc(hx+1.5+look*0.9,hy-0.8,1.1,0,7); ctx.arc(hx+6+look*0.9,hy-0.8,1.1,0,7); ctx.fill();
+    }
+    ctx.lineWidth=1.3; ctx.beginPath(); ctx.moveTo(hx-0.5,hy-4.5); ctx.lineTo(hx+3.5,hy-3.2); ctx.moveTo(hx+8,hy-4.5); ctx.lineTo(hx+4.5,hy-3.2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(hx+1,hy+4); ctx.quadraticCurveTo(hx+4,hy+5.5,hx+7,hy+3.5); ctx.stroke();
+    ctx.fillStyle=white; ctx.fillRect(hx+2.4,hy+3.6,1.4,1.8); ctx.fillRect(hx+5,hy+3.4,1.4,1.8);
   }
-  ctx.strokeStyle=V.edge; ctx.lineWidth=1.3; ctx.beginPath(); ctx.moveTo(hx-0.5,hy-4.5); ctx.lineTo(hx+3.5,hy-3.2); ctx.moveTo(hx+8,hy-4.5); ctx.lineTo(hx+4.5,hy-3.2); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(hx+1,hy+4); ctx.quadraticCurveTo(hx+4,hy+5.5,hx+7,hy+3.5); ctx.stroke();
-  ctx.fillStyle='#fff8e0'; ctx.fillRect(hx+2.4,hy+3.6,1.4,1.8); ctx.fillRect(hx+5,hy+3.4,1.4,1.8);
   // throwing arm, upper and lower, with the spear in hand when loaded
   const sx=2, sy=chestY+2, ex=sx+Math.cos(arm+Math.PI)*-7, ey=sy+Math.sin(arm+Math.PI)*-7, hx2=ex+Math.cos(arm+Math.PI*0.85)*-7, hy2=ey+Math.sin(arm+Math.PI*0.85)*-7;
   ctx.strokeStyle=V.goblin; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(ex,ey); ctx.lineTo(hx2,hy2); ctx.stroke();
