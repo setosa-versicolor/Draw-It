@@ -375,17 +375,17 @@ function createSim(lv, strokes){
     const gobs=lv.goblins||[];
     for(let gi=0; gi<gobs.length; gi++){
       const g=gobs[gi];
-      if(st.t>=st.gobNext[gi]){ st.gobNext[gi]+=g.every; st.throwT[gi]=st.t; st.spears.push({x:g.x+g.dir*12, y:g.y-30, vx:g.v[0], vy:g.v[1], stuck:false, age:0, g:gi}); st.events.push({type:'throw', gi}); }
+      if(st.t>=st.gobNext[gi]){ const tt=st.gobNext[gi]; st.gobNext[gi]+=g.every; st.throwT[gi]=st.t; st.spears.push({x:g.x+g.dir*12, y:g.y-30, vx:g.v[0], vy:g.v[1], stuck:false, age:0, g:gi, tt}); st.events.push({type:'throw', gi, tt}); }
       if((st.x-g.x)**2+(st.y-(g.y-16))**2 < (R+15)**2){ finish('crash','Bonked a goblin.'); return; }
     }
     for(const s of st.spears){
       s.age+=DT; if(s.stuck || s.gone) continue;
-      if(s.y>H+20 || s.x<-30 || s.x>W+30){ s.gone=true; st.events.push({type:'miss', gi:s.g}); continue; }
+      if(s.y>H+20 || s.x<-30 || s.x>W+30){ s.gone=true; st.events.push({type:'miss', gi:s.g, tt:s.tt}); continue; }
       s.vy+=SPEAR_G*DT; s.x+=s.vx*DT; s.y+=s.vy*DT;
       for(const g of segs){
         if(g.kind==='spike') continue;
         let u=((s.x-g.ax)*g.dx+(s.y-g.ay)*g.dy)/g.len2; u=u<0?0:u>1?1:u;
-        if((s.x-g.ax-g.dx*u)**2+(s.y-g.ay-g.dy*u)**2 < 9){ s.stuck=true; s.stuckAt=s.age; st.events.push({type:'miss', gi:s.g}); break; }
+        if((s.x-g.ax-g.dx*u)**2+(s.y-g.ay-g.dy*u)**2 < 9){ s.stuck=true; s.stuckAt=s.age; st.events.push({type:'miss', gi:s.g, tt:s.tt}); break; }
       }
       if(s.stuck) continue;
       const L=Math.hypot(s.vx,s.vy)||1, tx=s.x-s.vx/L*SPEAR_LEN, ty=s.y-s.vy/L*SPEAR_LEN;
@@ -1016,14 +1016,14 @@ function handleEvents(){
   const ev=sim.st.events; sim.st.events=[];
   for(const e of ev){
     if(e.type==='throw' || e.type==='miss'){
-      // goblins shout when they throw and sulk when a spear misses; voices are spaced so a fast thrower doesn't drone
-      const m = sim.mood || (sim.mood={sad:[],happy:[],voice:[]});
-      const now=performance.now()/1000, pitch=300+e.gi*85;
+      // a goblin plays one little scene at a time: furious wind-up, a shout, and if that spear misses, a sulk.
+      // Then it rests a few seconds before the next face, so moods come and go instead of flickering every throw.
+      const m=goblinMoods(), now=performance.now()/1000, pitch=300+e.gi*85;
       if(e.type==='throw'){
-        if(now-(m.voice[e.gi]||-9)>0.9){ m.voice[e.gi]=now; goblinVoice(['hyah','grah','hup'][Math.floor(Math.random()*3)], pitch*(0.95+Math.random()*0.1)); }
-      } else {
-        m.sad[e.gi]=now;
-        if(now-(m.voice[e.gi]||-9)>1.4){ m.voice[e.gi]=now; goblinVoice('aww', pitch); }
+        if(m.madFor[e.gi]===e.tt) goblinVoice(['hyah','grah','hup'][Math.floor(Math.random()*3)], pitch*(0.95+Math.random()*0.1));
+      } else if(m.madFor[e.gi]===e.tt || now>=(m.next[e.gi]||0)){
+        m.sad[e.gi]=now; m.next[e.gi]=now+SAD_HOLD+MOOD_REST;
+        goblinVoice('aww', pitch);
       }
     }
     else if(e.type==='portal'){
@@ -1042,7 +1042,7 @@ function handleEvents(){
       if(world){ ragdoll=null; shake=6; }
       if(sim.st.killer!=null){
         // the goblin who landed it is very pleased with itself
-        const m = sim.mood || (sim.mood={sad:[],happy:[],voice:[]}), gi=sim.st.killer, pitch=300+gi*85;
+        const m=goblinMoods(), gi=sim.st.killer, pitch=300+gi*85;
         m.happy[gi]=performance.now()/1000; m.sad[gi]=null;
         goblinVoice('heh', pitch*1.1, 0.15); goblinVoice('heh', pitch*1.2, 0.3); goblinVoice('heh', pitch*1.3, 0.45);
       }
@@ -1911,6 +1911,8 @@ function spear3d(x,y,vx,vy,motion){
   ctx.fillStyle=V.ironDark; ctx.beginPath(); ctx.moveTo(x+ux*5,y+uy*5); ctx.lineTo(x-ux*7-uy*5,y-uy*7+ux*5); ctx.lineTo(x-ux*4,y-uy*4); ctx.closePath(); ctx.fill();
   ctx.fillStyle=V.iron; ctx.beginPath(); ctx.moveTo(x+ux*5,y+uy*5); ctx.lineTo(x-ux*4,y-uy*4); ctx.lineTo(x-ux*7+uy*5,y-uy*7-ux*5); ctx.closePath(); ctx.fill();
 }
+const SAD_HOLD=1.6, MOOD_REST=2.6;   // how long a sulk lasts, and the calm gap before a goblin pulls another face
+function goblinMoods(){ return sim.mood || (sim.mood={sad:[],happy:[],next:[],madFor:[]}); }
 function drawGoblin3D(g,i,t){
   // throw timing: wind up over the last 0.4s before each throw, snap through, recover
   let since, until;
@@ -1923,11 +1925,24 @@ function drawGoblin3D(g,i,t){
   else arm=-0.5+Math.sin(t*2+i)*0.08;
   const holding = !(since<0.45 && since>=0) || until<0.4;
   // mood: smug after a hit, sulking after a miss, furious while winding up
-  const now=performance.now()/1000, m=sim&&sim.mood;
+  const now=performance.now()/1000, m=sim?goblinMoods():null;
   const happyK = m && m.happy[i]!=null ? now-m.happy[i] : 99, sadK = m && m.sad[i]!=null ? now-m.sad[i] : 99;
-  const happy = happyK<4, sad = !happy && sadK<1.1, madK = (!happy && !sad && until<0.45) ? 1-until/0.45 : 0;
+  const happy = happyK<4, sad = !happy && sadK<SAD_HOLD;
+  // fury is decided once at the start of a wind-up, and only if the goblin has calmed down from its last mood
+  let mad=false;
+  if(!happy && !sad && until<0.45){
+    if(m){
+      const id=sim.st.gobNext[i];
+      if(m.madFor[i]===id) mad=true;
+      else if(until>0.3 && now>=(m.next[i]||0)){ m.madFor[i]=id; m.next[i]=now+until+0.3+MOOD_REST; mad=true; }
+    } else {
+      // edit mode preview: roughly one furious wind-up every three seconds
+      mad = Math.floor((t-(g.t0||0))/g.every) % Math.max(1,Math.round(3/g.every)) === 0;
+    }
+  }
+  const madK = mad ? 1-until/0.45 : 0;
   let crouch = until<0.4 ? (1-until/0.4)*4 : since<0.2 ? 4-since*20 : 0;
-  if(sad) crouch+=3*Math.min(1,sadK*4);
+  if(sad) crouch+=3*Math.min(1,sadK*4,(SAD_HOLD-sadK)*4);
   const breathe=Math.sin(t*3+i*1.7)*1.2;
   const blink = ((t+i*1.3)%3.7)<0.12;
   const look = sim ? Math.max(-1,Math.min(1,(sim.st.x-g.x)*g.dir/200)) : 0.4;
