@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Ink Rider</title>
 <meta name="claude:viewport-fit-sides" content="cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Ink Rider">
+<meta name="format-detection" content="telephone=no">
+<meta name="theme-color" content="#dde4ea" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#081221" media="(prefers-color-scheme: dark)">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Kalam:wght@400;700&display=swap">
@@ -26,6 +35,8 @@
     --line:#c9d3dc;
     --font-display:"Bricolage Grotesque",ui-rounded,"Avenir Next","Segoe UI",system-ui,sans-serif;
     --font-hand:"Kalam","Comic Neue","Marker Felt","Segoe Print",cursive;
+    --safe-top:env(safe-area-inset-top, 0px);
+    --safe-bottom:env(safe-area-inset-bottom, 0px);
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
@@ -44,19 +55,20 @@
 
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
-  body{background:var(--desk);color:var(--fg);font-family:var(--font-display);font-size:15px;overflow:hidden;
-       -webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+  html{touch-action:manipulation;-webkit-text-size-adjust:100%}
+  body{background:var(--desk);color:var(--fg);font-family:var(--font-display);font-size:15px;overflow:hidden;overscroll-behavior:none;
+       -webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
   [hidden]{display:none!important}
   button{font:inherit;color:inherit;cursor:pointer}
   button:focus-visible{outline:3px solid var(--marker);outline-offset:2px}
 
-  .app{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto;grid-template-columns:minmax(0,1fr);
+  .app{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto;grid-template-columns:minmax(0,1fr);padding-top:var(--safe-top);
        padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px))}
 
   /* Header */
   .bar{display:flex;align-items:center;gap:12px;padding-block:10px}
   .back{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);
-        border-radius:10px;padding:7px 11px 7px 8px;font-weight:700;font-size:14px}
+        border-radius:10px;padding:7px 11px 7px 8px;font-weight:700;font-size:14px;min-height:40px}
   .back svg{width:16px;height:16px}
   .lvlname{flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;overflow:hidden;white-space:nowrap}
   .lvlname .num{font-weight:800;font-size:13px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
@@ -71,31 +83,33 @@
   .stage{position:relative;min-height:0}
   canvas#game{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
   .toast{position:absolute;left:50%;top:14px;transform:translateX(-50%);background:var(--surface);border:1px solid var(--line);
-         border-radius:999px;padding:8px 14px;font-weight:700;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.12);white-space:nowrap;
+         border-radius:18px;padding:8px 14px;font-weight:700;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.12);width:max-content;max-width:calc(100% - 24px);text-align:center;
          transition:opacity .2s, transform .2s;pointer-events:none}
   .toast.off{opacity:0;transform:translate(-50%,-6px)}
-  .rotate{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);font-size:12px;color:var(--muted);white-space:nowrap}
+  .rotate{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);font-size:12px;color:var(--muted);width:max-content;max-width:calc(100% - 24px);text-align:center;pointer-events:none}
   @media (orientation:landscape), (min-width:700px){ .rotate{display:none} }
+  .fitbtn{position:absolute;right:8px;top:8px;border:1px solid var(--line);background:var(--surface);border-radius:999px;
+          padding:8px 12px;font-weight:800;font-size:13px;min-height:36px;box-shadow:0 4px 14px rgba(0,0,0,.12)}
 
   /* Tool tray */
-  .tray{display:flex;align-items:center;gap:8px;padding-block:10px calc(10px + env(safe-area-inset-bottom,0px));flex-wrap:wrap}
+  .tray{display:flex;align-items:center;gap:8px;padding-block:10px calc(10px + var(--safe-bottom));flex-wrap:wrap}
   .seg{display:flex;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface)}
-  .seg button,.tool{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;padding:10px 12px;font-weight:700;font-size:14px}
+  .seg button,.tool{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;padding:10px 12px;font-weight:700;font-size:14px;min-height:44px;min-width:44px;justify-content:center}
   .seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
   .tool{border:1px solid var(--line);border-radius:12px;background:var(--surface)}
   .tool:disabled,.seg button:disabled{opacity:.4;cursor:default}
   .seg svg,.tool svg,.ride svg{width:18px;height:18px;flex:none}
   .spacer{flex:1}
   .ride{display:inline-flex;align-items:center;gap:8px;border:0;border-radius:14px;padding:12px 22px;font-weight:800;font-size:16px;
-        background:var(--marker);color:#1b1500;box-shadow:0 3px 0 rgba(0,0,0,.18)}
+        background:var(--marker);color:#1b1500;box-shadow:0 3px 0 rgba(0,0,0,.18);min-height:48px}
   .ride:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.18)}
   .ride.stop{background:var(--fg);color:var(--paper)}
   @media (max-width:430px){ .tool .lbl,.seg .lbl{display:none} .seg button,.tool{padding:10px} }
 
   /* Menu */
-  .menu{position:fixed;inset:0;overflow-y:auto;background:var(--desk);z-index:20;
+  .menu{position:fixed;inset:0;overflow-y:auto;background:var(--desk);z-index:20;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
         padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));
-        padding-block:calc(24px + env(safe-area-inset-top,0px)) calc(32px + env(safe-area-inset-bottom,0px))}
+        padding-block:calc(24px + var(--safe-top)) calc(32px + var(--safe-bottom))}
   .menu-inner{max-width:760px;margin:0 auto;display:grid;gap:22px}
   .hero{display:grid;grid-template-columns:1fr auto;align-items:end;gap:12px}
   .hero h1{margin:0;font-weight:800;font-size:clamp(44px,11vw,84px);line-height:.88;letter-spacing:-.035em;text-wrap:balance}
@@ -127,12 +141,14 @@
   .how{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
   .how div{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;font-size:14px;color:var(--muted);min-width:0}
   .how b{display:block;color:var(--fg);font-size:15px;margin-bottom:2px}
-  @media (max-width:560px){ .how{grid-template-columns:1fr} .hero{grid-template-columns:1fr} .hero .iconbtn{position:absolute;right:max(16px, env(safe-area-inset-right, 0px));top:calc(20px + env(safe-area-inset-top,0px))} }
+  @media (max-width:560px){ .how{grid-template-columns:1fr} .hero{grid-template-columns:1fr} .hero .iconbtn{position:absolute;right:max(16px, env(safe-area-inset-right, 0px));top:calc(20px + var(--safe-top))} }
+  .a2hs{font-size:13px;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+  .a2hs b{color:var(--fg)}
   @media (max-width:560px){ .daily{grid-template-columns:1fr} .play{justify-self:start} }
   /* Short landscape phones: header and tools become side rails so the page gets the full height */
   @media (orientation:landscape) and (max-height:520px){
     .app{grid-template-columns:120px minmax(0,1fr) auto;grid-template-rows:minmax(0,1fr);gap:10px;
-         padding-block:env(safe-area-inset-top,0px) env(safe-area-inset-bottom,0px)}
+         padding-top:var(--safe-top);padding-bottom:var(--safe-bottom)}
     .bar{flex-direction:column;align-items:stretch;justify-content:flex-start;padding-block:10px;min-width:0}
     .lvlname{flex:none;flex-direction:column;align-items:flex-start;gap:2px;white-space:normal}
     .lvlname .nm{font-size:19px}
@@ -182,7 +198,8 @@
   <div class="stage" id="stage">
     <canvas id="game" aria-label="Drawing area. Draw a track from the rider to the flag."></canvas>
     <div class="toast off" id="toast"></div>
-    <div class="rotate">Turn your phone sideways for a bigger page</div>
+    <div class="rotate" id="hint">Pinch to zoom · turn sideways for a bigger page</div>
+    <button class="fitbtn" id="fitBtn" hidden>Show whole page</button>
     <div class="scrim" id="result" hidden>
       <div class="card" role="dialog" aria-labelledby="resTitle">
         <h2 id="resTitle">Made it!</h2>
@@ -250,6 +267,7 @@
       <div><b>2. Ride</b>Gravity does the rest. If the rider wipes out, your track stays. Tweak it and go again.</div>
       <div><b>3. Collect</b>Stars only count if you reach the flag. Hatched areas take no ink.</div>
     </div>
+    <div class="a2hs" id="a2hs" hidden>On iPhone, tap <b>Share</b> then <b>Add to Home Screen</b> to play full screen, even offline.</div>
     <div class="legend">
       <span><i style="background:var(--ink)"></i>your ink</span>
       <span><i style="background:var(--pencil)"></i>printed ground</span>
@@ -497,7 +515,9 @@ function persist(){ try{ localStorage.setItem(KEY, JSON.stringify(save)); }catch
 
 /* ================= DOM ================= */
 const $=id=>document.getElementById(id);
-const canvas=$('game'), ctx=canvas.getContext('2d');
+const canvas=$('game'), mainCtx=canvas.getContext('2d');
+const layer=document.createElement('canvas'), layerCtx=layer.getContext('2d');
+let ctx=mainCtx;   // draw helpers paint into whichever context is current
 const stage=$('stage'), menu=$('menu'), toastEl=$('toast');
 const penBtn=$('penBtn'), eraseBtn=$('eraseBtn'), undoBtn=$('undoBtn'), clearBtn=$('clearBtn'), rideBtn=$('rideBtn'), rideLbl=$('rideLbl');
 const inkFill=$('inkFill'), inkPct=$('inkPct'), inkMeter=$('inkMeter');
@@ -522,6 +542,7 @@ function tone(freq, dur, type='triangle', vol=0.05, slide=0){
   if(save.muted) return;
   try{
     actx = actx || new (window.AudioContext||window.webkitAudioContext)();
+    if(actx.state==='suspended') actx.resume();
     const o=actx.createOscillator(), g=actx.createGain(), t=actx.currentTime;
     o.type=type; o.frequency.setValueAtTime(freq,t); if(slide) o.frequency.exponentialRampToValueAtTime(freq*slide,t+dur);
     g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
@@ -544,7 +565,10 @@ let sim=null, ghost=null;
 let drawing=null;                   // {pointerId, stroke, lastX, lastY, erasing}
 let fx=[];                          // particles
 let riderAngle=0, riderFacing=1;
-let view={s:1,ox:0,oy:0,cw:0,ch:0,dpr:1};
+let view={s:1,base:1,ox:0,oy:0,cw:0,ch:0,dpr:1};
+const ZMAX=4;
+let cam={z:1,cx:W/2,cy:H/2}, camBeforeRide=null;
+const pointers=new Map(); let gesture=null, gestureLock=false;
 let acc=0, lastT=0;
 let shake=0;
 
@@ -571,6 +595,7 @@ function openLevel(idx){
   $('lvlNum').textContent = idx<0 ? new Date().toLocaleDateString(undefined,{month:'short',day:'numeric'}) : 'Level '+(idx+1);
   $('lvlName').textContent = level.name;
   menu.hidden=true; resultEl.hidden=true;
+  cam={z:1,cx:W/2,cy:H/2}; camBeforeRide=null;
   toEdit();
   updateInk();
   resize();
@@ -585,7 +610,7 @@ function toEdit(){
 }
 function startRide(){
   if(mode!=='edit') return;
-  sim=createSim(level, strokes); mode='run'; acc=0;
+  sim=createSim(level, strokes); mode='run'; acc=0; camBeforeRide={...cam};
   rideBtn.classList.add('stop'); rideLbl.textContent='Stop';
   rideBtn.querySelector('svg').innerHTML='<rect x="6" y="6" width="12" height="12" rx="2"/>';
   [penBtn,eraseBtn,undoBtn,clearBtn].forEach(b=>b.disabled=true);
@@ -593,6 +618,7 @@ function startRide(){
 }
 function stopRide(){
   if(sim) ghost = sim.st.trail.slice();
+  if(camBeforeRide){ cam=camBeforeRide; camBeforeRide=null; applyCam(); }
   resultEl.hidden=true;
   toEdit();
 }
@@ -648,9 +674,35 @@ function inNoDraw(x,y){
   return (level.nodraw||[]).some(r=>x>=r[0]&&x<=r[0]+r[2]&&y>=r[1]&&y<=r[1]+r[3]);
 }
 const STEP=6;
+function cancelStroke(){
+  // a second finger landed mid-stroke: that was the start of a pinch, not a line
+  if(!drawing) return;
+  if(history.length) strokes=history.pop();
+  drawing=null; updateInk();
+}
+function startGesture(){
+  const [a,b]=[...pointers.values()], r=canvas.getBoundingClientRect();
+  const mx=(a.x+b.x)/2-r.left, my=(a.y+b.y)/2-r.top;
+  gesture={d0:Math.hypot(a.x-b.x,a.y-b.y)||1, z0:cam.z, wx:(mx-view.ox)/view.s, wy:(my-view.oy)/view.s};
+}
+function moveGesture(){
+  const [a,b]=[...pointers.values()], r=canvas.getBoundingClientRect();
+  const mx=(a.x+b.x)/2-r.left, my=(a.y+b.y)/2-r.top;
+  zoomAt(gesture.z0*Math.hypot(a.x-b.x,a.y-b.y)/gesture.d0, gesture.wx, gesture.wy, mx, my);
+}
+// set zoom so world point (wx,wy) sits under screen point (sx,sy)
+function zoomAt(z, wx, wy, sx, sy){
+  cam.z=Math.max(1,Math.min(ZMAX,z));
+  const s=view.base*cam.z;
+  cam.cx=wx-(sx-view.cw/2)/s; cam.cy=wy-(sy-view.ch/2)/s;
+  applyCam();
+}
 canvas.addEventListener('pointerdown', e=>{
-  if(mode!=='edit' || drawing) return;
+  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
   canvas.setPointerCapture(e.pointerId);
+  if(pointers.size===2){ cancelStroke(); startGesture(); gestureLock=true; return; }
+  if(pointers.size>2 || gestureLock) return;
+  if(mode!=='edit' || drawing) return;
   const [x,y]=toWorld(e);
   const erasing = tool==='erase' || e.button===2 || e.buttons===32;
   snapshot();
@@ -659,6 +711,8 @@ canvas.addEventListener('pointerdown', e=>{
   else if(!inNoDraw(x,y)){ if(inkLeft()<STEP){ flashInk(); } else { drawing.stroke=[x,y]; strokes.push(drawing.stroke); } }
 });
 canvas.addEventListener('pointermove', e=>{
+  const pt=pointers.get(e.pointerId); if(pt){ pt.x=e.clientX; pt.y=e.clientY; }
+  if(gesture){ if(pointers.size>=2) moveGesture(); return; }
   if(!drawing || e.pointerId!==drawing.id) return;
   const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
   for(const ce of (evs.length?evs:[e])){
@@ -679,6 +733,9 @@ canvas.addEventListener('pointermove', e=>{
   updateInk();
 });
 function endDraw(e){
+  pointers.delete(e.pointerId);
+  if(pointers.size<2) gesture=null;
+  if(pointers.size===0) gestureLock=false;   // fingers left over from a pinch never start a line
   if(!drawing || e.pointerId!==drawing.id) return;
   strokes = strokes.filter(s=>s.length>=4);
   const before = history[history.length-1];
@@ -688,8 +745,21 @@ function endDraw(e){
 canvas.addEventListener('pointerup', endDraw);
 canvas.addEventListener('pointercancel', endDraw);
 canvas.addEventListener('contextmenu', e=>e.preventDefault());
+canvas.addEventListener('wheel', e=>{
+  e.preventDefault();
+  const r=canvas.getBoundingClientRect(), sx=e.clientX-r.left, sy=e.clientY-r.top;
+  if(e.ctrlKey || e.metaKey){            // trackpad pinch or ctrl+wheel zooms at the cursor
+    zoomAt(cam.z*Math.exp(-e.deltaY*0.01), (sx-view.ox)/view.s, (sy-view.oy)/view.s, sx, sy);
+  } else if(cam.z>1){
+    cam.cx+=e.deltaX/view.s; cam.cy+=e.deltaY/view.s; applyCam();
+  }
+},{passive:false});
+// Safari's own page pinch would fight ours
+document.addEventListener('gesturestart', e=>e.preventDefault());
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible' && actx && actx.state!=='running') actx.resume().catch(()=>{}); });
+$('fitBtn').onclick=()=>{ cam={z:1,cx:W/2,cy:H/2}; applyCam(); };
 function eraseAt(x,y){
-  const r2=16*16, n=strokes.length;
+  const rr=Math.max(14, 22/view.s), r2=rr*rr, n=strokes.length;
   strokes=strokes.filter(s=>{ for(let i=0;i<s.length;i+=2){ if((s[i]-x)**2+(s[i+1]-y)**2<r2) return false; } return true; });
   if(strokes.length!==n){ updateInk(); }
 }
@@ -754,13 +824,24 @@ $('muteBtn').onclick=()=>{ save.muted=!save.muted; persist(); $('muteBtn').inner
 function resize(){
   const r=stage.getBoundingClientRect(), dpr=Math.min(3, window.devicePixelRatio||1);
   view.cw=r.width; view.ch=r.height; view.dpr=dpr;
-  canvas.width=Math.max(1,Math.round(r.width*dpr)); canvas.height=Math.max(1,Math.round(r.height*dpr));
+  canvas.width=layer.width=Math.max(1,Math.round(r.width*dpr)); canvas.height=layer.height=Math.max(1,Math.round(r.height*dpr));
+  applyCam();
+}
+function applyCam(){
   const pad=6;
-  view.s=Math.min((r.width-pad*2)/W, (r.height-pad*2)/H);
-  view.ox=(r.width-W*view.s)/2; view.oy=(r.height-H*view.s)/2;
+  view.base=Math.max(0.01, Math.min((view.cw-pad*2)/W, (view.ch-pad*2)/H));
+  view.s=view.base*cam.z;
+  // keep the page on screen: centre an axis that fits, otherwise clamp to the page edges
+  const hw=view.cw/2/view.s, hh=view.ch/2/view.s, m=pad/view.s;
+  cam.cx = W+2*m<=2*hw ? W/2 : Math.max(hw-m, Math.min(W-hw+m, cam.cx));
+  cam.cy = H+2*m<=2*hh ? H/2 : Math.max(hh-m, Math.min(H-hh+m, cam.cy));
+  view.ox=view.cw/2-cam.cx*view.s; view.oy=view.ch/2-cam.cy*view.s;
+  const zoomed=cam.z>1.02;
+  $('fitBtn').hidden=!zoomed; $('hint').hidden=zoomed;
 }
 window.addEventListener('resize', resize);
 if(window.visualViewport) visualViewport.addEventListener('resize', resize);
+if(window.ResizeObserver) new ResizeObserver(resize).observe(stage);
 
 function pathPoly(p){ ctx.beginPath(); ctx.moveTo(p[0],p[1]); for(let i=2;i<p.length;i+=2) ctx.lineTo(p[i],p[i+1]); }
 function smoothPoly(p){
@@ -795,8 +876,12 @@ function drawNoDraw(){
 function drawFixed(){
   ctx.lineCap='round'; ctx.lineJoin='round';
   for(const p of level.ground||[]){ ctx.strokeStyle=C.pencil; ctx.lineWidth=6; pathPoly(p); ctx.stroke(); }
+  for(const p of level.boost||[]){ ctx.strokeStyle=C.boost; ctx.lineWidth=7; pathPoly(p); ctx.stroke(); }
+  drawSpikes();
+}
+function drawChevrons(){
+  ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle=C.boost;
   for(const p of level.boost||[]){
-    ctx.strokeStyle=C.boost; ctx.lineWidth=7; pathPoly(p); ctx.stroke();
     // chevrons along the pad pointing the push direction
     for(let i=0;i+3<p.length;i+=2){
       const dx=p[i+2]-p[i], dy=p[i+3]-p[i+1], L=Math.hypot(dx,dy), ux=dx/L, uy=dy/L, nx=-uy, ny=ux;
@@ -808,6 +893,8 @@ function drawFixed(){
       }
     }
   }
+}
+function drawSpikes(){
   for(const p of level.spikes||[]){
     ctx.fillStyle=C.hazard; ctx.strokeStyle=C.hazard; ctx.lineWidth=2;
     for(let i=0;i+3<p.length;i+=2){
@@ -931,17 +1018,35 @@ function frame(now){
     if(sim.st.status!=='run') crashT=0;
   } else if(mode==='done' && sim && sim.st.status==='crash'){ crashT+=dt; }
   updateRiderPose(dt);
+  // zoomed in during a ride: the camera follows the rider (unless fingers are on the glass)
+  if(sim && mode!=='edit' && cam.z>1.02 && !gesture){
+    const k=Math.min(1,dt*4);
+    cam.cx+=(sim.st.x+sim.st.vx*0.15-cam.cx)*k; cam.cy+=(sim.st.y+sim.st.vy*0.1-cam.cy)*k; applyCam();
+  }
 
   const dpr=view.dpr;
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-  ctx.fillStyle=C.desk; ctx.fillRect(0,0,view.cw,view.ch);
+  // Static layer (paper, zones, ground, ink) is only repainted when something in it changes
+  const key=[view.cw,view.ch,dpr,view.s.toFixed(5),view.ox.toFixed(2),view.oy.toFixed(2),level.id,mode==='edit',
+    strokes.length,strokes.reduce((a,s)=>a+s.length,0),history.length,ghost?ghost.length:0,C.paper].join('|');
+  if(key!==frame.key){
+    frame.key=key; ctx=layerCtx;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.fillStyle=C.desk; ctx.fillRect(0,0,view.cw,view.ch);
+    ctx.setTransform(dpr*view.s,0,0,dpr*view.s,dpr*view.ox,dpr*view.oy);
+    ctx.save(); ctx.shadowColor='rgba(10,30,60,.18)'; ctx.shadowBlur=18; ctx.shadowOffsetY=4; ctx.fillStyle=C.paper; ctx.fillRect(0,0,W,H); ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(0,0,W,H); ctx.clip();
+    drawPaper(); drawNoDraw(); drawGhost(); drawFixed(); drawInk();
+    if(mode==='edit') drawStartMarker();
+    ctx.restore();
+    ctx=mainCtx;
+  }
   let sx=0, sy=0; if(shake>0){ sx=(Math.random()-0.5)*shake; sy=(Math.random()-0.5)*shake; shake=Math.max(0,shake-dt*40); }
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.fillStyle=C.desk; ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(layer, sx*dpr, sy*dpr);
   ctx.setTransform(dpr*view.s,0,0,dpr*view.s,dpr*(view.ox+sx),dpr*(view.oy+sy));
-  // sheet shadow
-  ctx.save(); ctx.shadowColor='rgba(10,30,60,.18)'; ctx.shadowBlur=18; ctx.shadowOffsetY=4; ctx.fillStyle=C.paper; ctx.fillRect(0,0,W,H); ctx.restore();
   ctx.save(); ctx.beginPath(); ctx.rect(0,0,W,H); ctx.clip();
-  drawPaper(); drawNoDraw(); drawGhost(); drawFixed(); drawInk(); drawGoal(t); drawStars(t);
-  if(mode==='edit') drawStartMarker();
+  drawChevrons(); drawGoal(t); drawStars(t);
   drawTrail();
   if(sim) drawRider(sim.st.x, sim.st.y, t, sim.st.status==='crash' ? crashT : 0);
   else drawRider(level.start[0], level.start[1], t, 0);
@@ -952,6 +1057,13 @@ function frame(now){
 
 /* ================= Boot ================= */
 function boot(data){
+  try{
+    if('serviceWorker' in navigator && location.protocol==='https:' && window.top===window)
+      navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }catch(e){}
+  const ios=/iP(hone|od|ad)/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+  let topLevel=false; try{ topLevel=window.top===window; }catch(e){}
+  $('a2hs').hidden = !(ios && topLevel && !navigator.standalone && !matchMedia('(display-mode: standalone)').matches);
   if(data && typeof data.level==='number' && data.screen==='play') openLevel(data.level);
   else { level=LEVELS[0]; showMenu(); }
   resize();
