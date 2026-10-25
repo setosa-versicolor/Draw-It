@@ -711,7 +711,7 @@ function makeRunWorld(seed, nStars){
 // One control the whole way: hold to go, let go to ease off. Each form handles that differently.
 function makePiecesWorld(seed, nStars){
   const rng=mulberry(seed), GRAV=1500, BASE=520, STEP=10;
-  const secs=[['ball',1800],['pogo',1600],['walk',1100],['whole',700]];
+  const secs=[['ball',1800],['pogo',1600],['walk',1100],['arms',450],['whole',350]];
   const starts=[]; let total=0; for(const [f,l] of secs){ starts.push(total); total+=l; }
   const hs=new Float32Array(Math.ceil((total+400)/STEP)+2).fill(BASE);
   const setH=(x0,x1,fn)=>{ for(let i=Math.floor(x0/STEP); i<=Math.ceil(x1/STEP) && i<hs.length; i++) hs[i]=fn(i*STEP); };
@@ -734,13 +734,28 @@ function makePiecesWorld(seed, nStars){
   const whole0=starts[3]; setH(whole0,total+400,()=>BASE);
   const ground=x=>{ const i=Math.floor(x/STEP), f=x/STEP-i; if(i<0) return BASE; if(i+1>=hs.length) return BASE; const a=hs[i], b=hs[i+1]; return a+(b-a)*f; };
   const slope=x=>{ const a=ground(x-4), b=ground(x+4); return a===a && b===b ? (b-a)/8 : 0; };   // gaps have no ground, so no slope
-  const pickups=[{x:starts[1]-60, part:'leg', to:'pogo', msg:'A leg! Hold to lean and hop forward. Lean too far and you tip.'},
+  const pickups=[{x:starts[1]-60, part:'leg', to:'pogo', msg:'A leg! Hold to lean and go faster, even mid-hop. Straighten up before you land.'},
                  {x:starts[2]-60, part:'leg', to:'walk', msg:'Two legs, no arms. Hold to walk. Too fast and that big head topples you.'},
-                 {x:starts[3]-60, part:'arms', to:'whole', msg:'Arms! All in one piece. Run for the portal!'}];
+                 {x:starts[3]-60, part:'arms', to:'arms', msg:'Arms! Now you can keep your balance. Run!'},
+                 {x:starts[4]-60, part:'scarf', to:'whole', msg:'Your scarf! All in one piece. Through the portal!'}];
+  // pogo physics, shared with the autopilot: lean sets your speed (in the air too), and only the landing can tip you
+  function pogoStep(s, hold, dt){
+    s.lean=Math.max(0, Math.min(1.6, s.lean+(hold?1.4:-1.8)*dt));
+    s.vx += (Math.min(1.25,s.lean)*380 - s.vx)*Math.min(1,6*dt);
+    s.vy+=GRAV*dt; s.x+=s.vx*dt; s.y+=s.vy*dt;
+    const gn=ground(s.x);
+    if(s.vy>0 && s.y>=gn){
+      s.y=gn;
+      if(s.lean>1.15) return 'tip';
+      if(spikes.some(k=>s.x>k[0]-4 && s.x<k[1]+4)) return 'spike';
+      s.vy=-660; return 'bounce';
+    }
+    return null;
+  }
   const stars=[];
   if(nStars>0){ const s=spikes[Math.min(spikes.length-1,1)]; stars.push({x:(s[0]+s[1])/2, y:BASE-170, got:false}); }
   const w={kind:'pieces', x:b0+120, y:BASE-16, vx:0, vy:0, t:0, status:'intro', reason:'', starsGot:0, stars, spikes, pickups,
-    form:'ball', ground:true, holding:false, lean:0, wob:0, spin:0, endX:total+120, GROUND:BASE, groundAt:ground, msg:'', msgT:0, parts:[],
+    form:'ball', ground:true, holding:false, lean:0, wob:0, spin:0, endX:total+120, GROUND:BASE, groundAt:ground, msg:'', msgT:0, parts:[], pogoStep,
     press(){ if(w.status==='ready') w.status='play'; w.holding=true; },
     release(){ w.holding=false; },
     slide(on){ if(on) w.press(); else w.release(); },
@@ -763,15 +778,10 @@ function makePiecesWorld(seed, nStars){
         }
         w.spin+=w.vx*dt/r;
       } else if(w.form==='pogo'){
-        w.lean += w.holding ? 0.9*dt : -1.2*dt; if(w.lean<0) w.lean=0;
-        if(w.lean>1.15) return fail('Leaned too far and tipped over.');
-        w.vy+=GRAV*dt; w.x+=w.vx*dt; w.y+=w.vy*dt;
-        const gn=ground(w.x);
-        if(w.vy>0 && w.y>=gn){
-          w.y=gn;
-          if(spikes.some(s=>w.x>s[0]-4 && w.x<s[1]+4)) return fail('Pogoed onto spikes.');
-          w.vy=-660; w.vx=Math.min(1,w.lean)*360; sfx.jump();
-        }
+        const r=pogoStep(w, w.holding, dt);
+        if(r==='tip') return fail('Landed leaning too far and tipped over.');
+        if(r==='spike') return fail('Pogoed onto spikes.');
+        if(r==='bounce') sfx.jump();
       } else if(w.form==='walk'){
         const s=slope(w.x);
         w.vx += ((w.holding?260:-320) + s*GRAV*0.3)*dt; w.vx=Math.max(0,Math.min(320,w.vx));
@@ -788,7 +798,7 @@ function makePiecesWorld(seed, nStars){
           p.got=true; w.form=p.to; w.msg=p.msg; w.msgT=3.2; sfx.star(1);
           if(p.to==='pogo'){ w.y=ground(w.x); w.vy=-500; w.vx=120; w.lean=0.3; }
           if(p.to==='walk'){ w.y=ground(w.x); w.vx=Math.min(w.vx,120); w.wob=0; }
-          if(p.to==='whole'){ w.y=ground(w.x); w.vx=Math.max(w.vx,200); }
+          if(p.to==='arms'||p.to==='whole'){ w.y=ground(w.x); w.vx=Math.max(w.vx,200); }
         }
       }
       for(const s of stars){ if(s.got) continue; const top = w.form==='pogo' ? w.y-64 : w.y-40;
@@ -809,18 +819,25 @@ function autopilot(w){
     if(w.y>target+42 && w.vy>-40) w.press();
   } else if(w.kind==='pieces'){
     if(w.status!=='play') return;
-    if(w.form==='ball' || w.form==='whole'){ w.holding=true; return; }
+    if(w.form==='ball' || w.form==='arms' || w.form==='whole'){ w.holding=true; return; }
     if(w.form==='walk'){ w.holding = w.vx<138; return; }
-    // pogo: once per hop, pick a lean for the next hop whose landing clears the spikes, then steer the lean to it
-    const hop=2*660/1500, bad=x=>w.spikes.some(s=>x>s[0]-30 && x<s[1]+30);
-    if(w.vy<0 && w._hopAt!==Math.round(w.x/4) && w.vy<-600){
-      w._hopAt=Math.round(w.x/4);
-      const xl=w.x+w.vx*hop, lo=Math.max(0,w.lean-1.1*hop), hi=Math.min(1,w.lean+0.85*hop);
-      w._target=lo;
-      for(let L=hi; L>=lo; L-=0.02){ if(!bad(xl+L*360*hop)){ w._target=L; break; } }
+    // pogo: every 0.05s, try "hold for a while then let go" and the reverse at many switch points, play each
+    // to the landing, and follow the plan that lands clear of the spikes with a comfortable lean
+    const bad=x=>w.spikes.some(s=>x>s[0]-16 && x<s[1]+16);
+    w._k=(w._k||0)+1;
+    if(w._k%6===1 || !w._plan){
+      let best=null;
+      for(const first of [true,false]) for(let tau=0; tau<=0.9; tau+=0.05){
+        const s={x:w.x,y:w.y,vx:w.vx,vy:w.vy,lean:w.lean}; let tt=0, r=null;
+        for(let k=0;k<240 && !r;k++){ r=w.pogoStep(s, tt<tau?first:!first, 1/120); tt+=1/120; }
+        if(r!=='bounce' || bad(s.x)) continue;
+        const score = s.x - Math.abs(s.lean-0.6)*120;
+        if(!best || score>best.score) best={score, first, tau, t0:w.t};
+      }
+      w._plan=best;
     }
-    const tgt=w._target??0.6;
-    w.holding = w.lean < tgt;
+    const p=w._plan;
+    w.holding = p ? ((w.t-p.t0)<p.tau ? p.first : !p.first) : w.lean<0.6;
   } else {
     const b=w.box(), next=w.obs.find(o=>o.x+o.w>b.l);
     if(!next){ w.slide(false); return; }
@@ -1632,6 +1649,7 @@ function drawPiecesWorld(w,t,camX,vis){
     ctx.save(); ctx.globalAlpha=0.3; ctx.fillStyle=C.marker; ctx.beginPath(); ctx.arc(x,y,30,0,7); ctx.fill(); ctx.restore();
     ctx.save(); ctx.translate(x,y); ctx.rotate(Math.sin(t*2+p.x)*0.3);
     if(p.part==='leg'){ ctx.beginPath(); ctx.moveTo(-4,-18); ctx.lineTo(2,4); ctx.lineTo(-2,18); ctx.lineTo(8,18); ctx.stroke(); }
+    else if(p.part==='scarf'){ ctx.strokeStyle=C.hazard; ctx.lineWidth=5; ctx.beginPath(); ctx.moveTo(-16,-4); ctx.quadraticCurveTo(-6,-14,2,-4); ctx.quadraticCurveTo(10,6,16,-4); ctx.stroke(); ctx.strokeStyle=C.fg; ctx.lineWidth=4; }
     else { ctx.beginPath(); ctx.moveTo(-18,-6); ctx.lineTo(-4,0); ctx.lineTo(-14,10); ctx.moveTo(18,-6); ctx.lineTo(4,0); ctx.lineTo(14,10); ctx.stroke(); }
     ctx.restore();
   }
@@ -1641,22 +1659,26 @@ function drawPiecesWorld(w,t,camX,vis){
   if(w.status==='intro'){
     // the stick figure comes apart: head-and-body ball drops in, limbs scatter off ahead
     const k=Math.min(1,w.t/1.2);
-    ctx.save(); ctx.translate(px, y-(1-k)*(1-k)*260); ctx.rotate(k*8); ctx.beginPath(); ctx.arc(0,0,16,0,7); ctx.fillStyle=C.paper; ctx.fill(); ctx.stroke(); stickHead(0,-6,7); ctx.restore();
-    [[1.0,-1.6],[1.4,-1.1],[1.8,-1.4],[2.2,-0.9]].forEach(([vx,vy],i)=>{
-      const tt=w.t*1.4, lx=px+vx*tt*300, ly=y-120+vy*tt*300+tt*tt*260; ctx.save(); ctx.translate(lx,ly); ctx.rotate(tt*(6+i)); ctx.beginPath(); ctx.moveTo(-10,0); ctx.lineTo(10,0); ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.translate(px, y-(1-k)*(1-k)*260); ctx.rotate(k*8); ctx.lineWidth=3; stickHead(0,0,15); ctx.restore();
+    [[1.0,-1.6],[1.4,-1.1],[1.8,-1.4],[2.2,-0.9],[2.6,-1.3]].forEach(([vx,vy],i)=>{
+      const tt=w.t*1.4, lx=px+vx*tt*300, ly=y-120+vy*tt*300+tt*tt*260; ctx.save(); ctx.translate(lx,ly); ctx.rotate(tt*(6+i)); ctx.beginPath();
+      if(i===4){ ctx.strokeStyle=C.hazard; ctx.moveTo(-12,0); ctx.quadraticCurveTo(-4,-6,2,0); ctx.quadraticCurveTo(8,6,12,0); }
+      else { ctx.moveTo(-10,0); ctx.lineTo(10,0); }
+      ctx.stroke(); ctx.restore();
     });
   } else if(w.form==='ball'){
-    ctx.translate(px,y); ctx.rotate(w.spin);
-    ctx.fillStyle=C.paper; ctx.beginPath(); ctx.arc(0,0,16,0,7); ctx.fill(); ctx.stroke();
-    ctx.lineWidth=3; ctx.beginPath(); ctx.arc(0,0,9,0.4,2.6); ctx.stroke();
-    ctx.lineWidth=2.5; stickHead(0,-7,6);
+    // just your head, blue hat and all, rolling along
+    ctx.translate(px,y); ctx.rotate(w.spin); ctx.lineWidth=3; stickHead(0,0,15);
   } else if(w.form==='pogo'){
-    ctx.translate(px,y); ctx.rotate(Math.min(1.3,w.lean)*0.55);
+    ctx.save(); ctx.translate(px,y); ctx.rotate(Math.min(1.6,w.lean)*0.5);
     const sq=Math.max(0,Math.min(1,(w.vy+660)/1320));
     ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,-8);
     for(let i=0;i<5;i++) ctx.lineTo(i%2?-5:5, -8-i*3-sq*2); ctx.lineTo(0,-26); ctx.lineTo(0,-40); ctx.moveTo(-8,-26); ctx.lineTo(8,-26); ctx.stroke();
     ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(2,-28); ctx.lineTo(4,-42); ctx.lineTo(2,-58); ctx.stroke();
     ctx.lineWidth=3; stickHead(3,-66,8);
+    ctx.restore();
+    // leaning past the safe angle: you'll tip if you land like this
+    if(w.lean>1.15){ ctx.fillStyle=C.hazard; ctx.font='800 26px sans-serif'; ctx.textAlign='center'; ctx.fillText('!', px+18, y-92); }
   } else if(w.form==='walk'){
     const ph=t*9*(w.vx/140+0.2), a=Math.sin(ph)*0.6, b=-a, sway=Math.sin(t*7)*w.wob*0.7+w.wob*0.4;
     ctx.translate(px,y);
@@ -1672,7 +1694,7 @@ function drawPiecesWorld(w,t,camX,vis){
     ctx.moveTo(0,-12); ctx.lineTo(Math.sin(a)*9, -12+Math.cos(a)*6); ctx.lineTo(Math.sin(a)*9-3, 0);
     ctx.moveTo(0,-12); ctx.lineTo(Math.sin(b)*9, -12+Math.cos(b)*6); ctx.lineTo(Math.sin(b)*9-3, 0);
     ctx.moveTo(0,-12); ctx.lineTo(2,-24); ctx.moveTo(1,-20); ctx.lineTo(8+a*3,-15); ctx.moveTo(1,-20); ctx.lineTo(-6+b*3,-15); ctx.stroke();
-    ctx.strokeStyle=C.hazard; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(1,-24); ctx.quadraticCurveTo(-8,-25,-15,-22); ctx.stroke();
+    if(w.form==='whole'){ const fl=Math.sin(t*22)*2; ctx.strokeStyle=C.hazard; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(1,-24); ctx.quadraticCurveTo(-8,-25+fl,-15,-22-fl); ctx.stroke(); }
     ctx.strokeStyle=C.fg; ctx.lineWidth=2.4; stickHead(3,-29,4.6);
   }
   ctx.restore();
