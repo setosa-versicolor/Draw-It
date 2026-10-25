@@ -183,6 +183,8 @@
   .actions button{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:11px 16px;font-weight:800}
   .actions button.main{background:var(--ink);color:var(--paper);border-color:var(--ink)}
   .sharetext{margin:12px 0 0;font-size:13px;color:var(--muted);white-space:pre-line;user-select:text;-webkit-user-select:text}
+  .retryw{position:absolute;left:50%;bottom:56px;transform:translateX(-50%);border:0;border-radius:14px;padding:12px 18px;font-weight:800;font-size:15px;
+          background:var(--portal);color:#fff;min-height:44px;box-shadow:0 6px 18px rgba(0,0,0,.2)}
   .hud{position:absolute;left:10px;bottom:10px;display:flex;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--line);
        border-radius:999px;padding:6px 12px;font-weight:800;font-size:14px;font-variant-numeric:tabular-nums;pointer-events:none}
   .hud .st{color:var(--fg)}
@@ -210,6 +212,7 @@
     <div class="hud" id="hud" hidden><span class="st" id="hudStars">★ 0/3</span><span id="hudTime">0.0s</span></div>
     <div class="rotate" id="hint">Pinch to zoom · turn sideways for a bigger page</div>
     <button class="fitbtn" id="fitBtn" hidden>Show whole page</button>
+    <button class="retryw" id="retryWorldBtn" hidden>Try the world again</button>
     <div class="scrim" id="result" hidden>
       <div class="card" role="dialog" aria-labelledby="resTitle">
         <h2 id="resTitle">Made it!</h2>
@@ -307,6 +310,7 @@ const DRAG = 0.03;                // air drag per second
 const VMAX = 2300;
 const DT = 1/240;
 const STAR_R = 16, GOAL_R = 26, PORTAL_R = 26;
+const SPEAR_G = 700, SPEAR_LEN = 26;
 const MAX_TIME = 30, STALL_TIME = 1.2;
 
 function polySegs(poly, kind, out){
@@ -334,7 +338,8 @@ function createSim(lv, strokes){
   strokes.forEach(s=>polySegs(s,'ink',segs));
   const st = {
     x:lv.start[0], y:lv.start[1], vx:(lv.v||[90,0])[0], vy:(lv.v||[90,0])[1],
-    t:0, status:'run', reason:'', stars:lv.stars.map(()=>false), worldStars:0, used:[], portal:-1, contact:null, slow:0, events:[], trail:[], tick:0
+    t:0, status:'run', reason:'', stars:lv.stars.map(()=>false), worldStars:0, used:[], portal:-1, contact:null, slow:0, events:[], trail:[], tick:0,
+    spears:[], gobNext:(lv.goblins||[]).map(g=>g.t0||0), throwT:(lv.goblins||[]).map(()=>-9)
   };
   function finish(status, reason){ st.status=status; st.reason=reason||''; st.events.push({type:status, reason}); }
   function step(){
@@ -366,6 +371,27 @@ function createSim(lv, strokes){
     }
     const sp = Math.hypot(st.vx, st.vy);
     if(sp>VMAX){ st.vx*=VMAX/sp; st.vy*=VMAX/sp; }
+    // goblins throw on a fixed beat; ink and printed ground stop spears, which then stay put harmlessly
+    const gobs=lv.goblins||[];
+    for(let gi=0; gi<gobs.length; gi++){
+      const g=gobs[gi];
+      if(st.t>=st.gobNext[gi]){ st.gobNext[gi]+=g.every; st.throwT[gi]=st.t; st.spears.push({x:g.x+g.dir*12, y:g.y-30, vx:g.v[0], vy:g.v[1], stuck:false, age:0}); }
+      if((st.x-g.x)**2+(st.y-(g.y-16))**2 < (R+15)**2){ finish('crash','Bonked a goblin.'); return; }
+    }
+    for(const s of st.spears){
+      s.age+=DT; if(s.stuck) continue;
+      s.vy+=SPEAR_G*DT; s.x+=s.vx*DT; s.y+=s.vy*DT;
+      for(const g of segs){
+        if(g.kind==='spike') continue;
+        let u=((s.x-g.ax)*g.dx+(s.y-g.ay)*g.dy)/g.len2; u=u<0?0:u>1?1:u;
+        if((s.x-g.ax-g.dx*u)**2+(s.y-g.ay-g.dy*u)**2 < 9){ s.stuck=true; break; }
+      }
+      if(s.stuck) continue;
+      const L=Math.hypot(s.vx,s.vy)||1, tx=s.x-s.vx/L*SPEAR_LEN, ty=s.y-s.vy/L*SPEAR_LEN;
+      const ex=s.x-tx, ey=s.y-ty; let u=((st.x-tx)*ex+(st.y-ty)*ey)/(ex*ex+ey*ey); u=u<0?0:u>1?1:u;
+      if((st.x-tx-ex*u)**2+(st.y-ty-ey*u)**2 < (R+2)**2){ finish('crash','Speared!'); return; }
+    }
+    if(st.spears.length>24 || (st.tick%60===0)) st.spears=st.spears.filter(s=>s.age<7 && s.y<H+60 && s.x>-60 && s.x<W+60);
     // a portal pauses the page; the game plays its world, then calls exitPortal or failPortal
     for(let i=0;i<(lv.portals||[]).length;i++){
       const p=lv.portals[i];
@@ -424,6 +450,10 @@ const LEVELS = [
     start:[70,92], ground:[ledge(70,92)],
     spikes:[[250,560,330,480,410,560,490,480,570,560,650,480,730,560]], goal:[900,600], ink:1250,
     stars:[[330,330],[570,380],[800,520]] },
+  { id:'spear-valley', name:'Spear Valley', note:'This portal opens onto another page. You draw that one too.',
+    start:[70,92], ground:[ledge(70,92)], spikes:[[0,690,1000,690]], goal:[880,620], ink:1300,
+    portals:[{x:480,y:360, world:'spear', sub:'spear-valley-page', exit:[180,420], v:[160,0], stars:2}],
+    stars:[[560,540]] },
   { id:'switchback', name:'Switchback', note:'Fly off your line into a curved wall to turn around',
     start:[70,92], ground:[ledge(70,92)], goal:[110,620], ink:1900,
     stars:[[480,280],[860,440],[460,600]] },
@@ -431,6 +461,10 @@ const LEVELS = [
     start:[70,82], ground:[ledge(70,82)], spikes:[[0,690,1000,690]], goal:[880,620], ink:1300,
     portals:[{x:430,y:520, world:'run', exit:[560,120], v:[200,0], stars:1}],
     stars:[[300,380],[720,330]] },
+  { id:'bits-and-pieces', name:'Bits & Pieces', note:'Fair warning: this portal takes you apart.',
+    start:[70,82], ground:[ledge(70,82)], nodraw:[[560,0,120,700]], spikes:[[0,690,1000,690]], goal:[920,330], ink:1300,
+    portals:[{x:520,y:420, world:'pieces', exit:[700,120], v:[260,0], stars:1}],
+    stars:[[320,320],[840,212]] },
   { id:'needle', name:'Thread the Needle', note:'Fly through the slot',
     start:[70,92], ground:[ledge(70,92)],
     nodraw:[[380,0,170,700]], spikes:[[465,0,465,300],[465,420,465,700]], goal:[880,580], ink:1100,
@@ -467,7 +501,19 @@ const HINTS = {
   'grand-tour': [[194,146,400,140,700,170,880,194],[900,120,960,220,960,420,880,540,700,570,400,580],[300,500,200,560,140,652,60,660]],
   'half-pipe': [[796,166,720,260,670,380,650,402,640,402],[380,402,250,400,160,372,110,300,100,220,130,150,200,112,300,112]],
   'paper-skies': [[194,166,250,220,330,276,450,330,520,352,560,356],[585,168,680,240,760,346,840,500,900,612,960,620]],
-  'doodle-dash': [[194,156,240,240,300,392,360,470,430,532,470,540],[570,140,720,342,880,632,960,640]]
+  'doodle-dash': [[194,156,240,240,300,392,360,470,430,532,470,540],[570,140,720,342,880,632,960,640]],
+  'spear-valley': [[194,166,260,240,380,330,480,372,520,376],[190,442,360,500,560,556,760,612,900,632,960,636]],
+  'spear-valley-page': [[194,166,260,250,380,344,540,410,700,484,820,530,900,574,960,580],[600,380,860,497]],
+  'bits-and-pieces': [[194,156,240,240,320,334,420,400,520,432,550,436],[705,145,800,200,880,260,920,345,960,360]]
+};
+
+// Drawn worlds: a portal can open onto another page you draw on. Its flag is an exit portal back out.
+const SUBLEVELS = {
+  'spear-valley-page': { id:'spear-valley-page', name:'Spear Valley', goalPortal:true,
+    note:'Goblins throw on a beat. Ink stops spears, so draw a shield if you need one.',
+    start:[70,92], ground:[ledge(70,92),[500,620,620,620],[550,170,650,170]], spikes:[[0,690,1000,690]],
+    goblins:[{x:560,y:620,dir:-1,v:[-260,-620],every:1.5,t0:0.2},{x:600,y:170,dir:1,v:[180,-100],every:0.6,t0:0.2}],
+    goal:[900,560], ink:1500, stars:[[380,330],[700,470]] },
 };
 
 /* ================= Daily generator ================= */
@@ -550,9 +596,31 @@ function makeDaily(dayNo){
     if(rng()<0.5) mirror(lv);
     const refM = lv._mirrored ? ref.map((v,i)=>i%2?v:W-v) : ref;
     const res = simulate(lv,[refM]);
-    if(res.status==='win' && res.stars===3){ lv.hint=[refM]; return lv; }
+    if(res.status==='win' && res.stars===3){ lv.hint=[refM]; return addDailyPortal(lv, refM, dayNo); }
   }
   return Object.assign({}, LEVELS[0], {id:'daily-'+dayNo, name:'Daily #'+dayNo});
+}
+// Some days (from Daily #2 on, so a day never changes after it ships) put a portal on the route.
+// The portal sits where the checked route already goes and the exit a beat further along, then the day is re-checked.
+function addDailyPortal(lv, ref, dayNo){
+  const r=mulberry(dayNo*104729+7);
+  if(dayNo<2 || r()>0.45) return lv;
+  const world=['plane','run','pieces'][Math.floor(r()*3)];
+  const sim=createSim(lv,[ref]), samples=[];
+  while(sim.st.status==='run'){ sim.step(); if(sim.st.tick%12===0){ const s=sim.st; samples.push({x:s.x,y:s.y,vx:s.vx,vy:s.vy,t:s.t}); } }
+  const far=(x,y,d)=>[...lv.stars, lv.goal, lv.start].every(p=>Math.hypot(p[0]-x,p[1]-y)>d);
+  for(const frac of [0.45,0.4,0.5,0.35,0.55]){
+    const i=Math.floor(samples.length*frac), j=Math.min(samples.length-1, i+12);   // about 0.6s further on
+    const a=samples[i], b=samples[j]; if(!a||!b) continue;
+    if(!far(a.x,a.y,70) || !far(b.x,b.y,50)) continue;
+    // the star nearest the portal moves inside the world, so the day still has three
+    const k=lv.stars.reduce((best,s,n)=>Math.hypot(s[0]-a.x,s[1]-a.y)<Math.hypot(lv.stars[best][0]-a.x,lv.stars[best][1]-a.y)?n:best,0);
+    const cand=Object.assign({},lv,{stars:lv.stars.filter((_,n)=>n!==k),
+      portals:[{x:Math.round(a.x),y:Math.round(a.y),world,exit:[Math.round(b.x),Math.round(b.y)],v:[Math.round(b.vx),Math.round(b.vy)],stars:1}]});
+    const res=simulate(cand,[ref]);
+    if(res.status==='win' && res.stars===3) return cand;
+  }
+  return lv;
 }
 function mirror(lv){
   const mx=p=>p.map((v,i)=>i%2?v:W-v);
@@ -570,6 +638,8 @@ const WH = 700;
 function seedOf(s){ let h=2166136261; for(const c of s){ h^=c.charCodeAt(0); h=Math.imul(h,16777619); } return h>>>0; }
 const WORLDS = {
   plane: { name:'Paper Skies', how:'Tap to flap. Fly between the pencils.', make:makePlaneWorld },
+  pieces:{ name:'Bits & Pieces', how:'Hold to move. Let go to slow down. Pick up your missing parts.', make:makePiecesWorld },
+  spear: { name:'Spear Valley', how:'Draw your way past the goblins.' },
   run:   { name:'Doodle Dash', how:'Tap the right side to jump. Hold the left side to slide.', make:makeRunWorld },
 };
 function makePlaneWorld(seed, nStars){
@@ -636,13 +706,120 @@ function makeRunWorld(seed, nStars){
   function fail(r){ w.status='fail'; w.reason=r; sfx.crash(); }
   return w;
 }
+// Bits & Pieces: you arrive in pieces. Roll as a ball, hop on one leg, wobble on two, then run whole again.
+// One control the whole way: hold to go, let go to ease off. Each form handles that differently.
+function makePiecesWorld(seed, nStars){
+  const rng=mulberry(seed), GRAV=1500, BASE=520, STEP=10;
+  const secs=[['ball',1800],['pogo',1600],['walk',1100],['whole',700]];
+  const starts=[]; let total=0; for(const [f,l] of secs){ starts.push(total); total+=l; }
+  const hs=new Float32Array(Math.ceil((total+400)/STEP)+2).fill(BASE);
+  const setH=(x0,x1,fn)=>{ for(let i=Math.floor(x0/STEP); i<=Math.ceil(x1/STEP) && i<hs.length; i++) hs[i]=fn(i*STEP); };
+  const spikes=[];
+  // ball: rolling hills, then two gaps each with a kicker ramp before it
+  const b0=starts[0];
+  const hill=x=>BASE-28*Math.sin((x-b0-300)/130);
+  setH(b0+300,b0+1800,hill);
+  for(const px of [b0+820, b0+1450]){
+    const ramp=150, gap=120+Math.round(rng()*30), top=hill(px-ramp);
+    setH(px-ramp,px,x=>top-((x-(px-ramp))/ramp)**2*70);
+    setH(px+STEP,px+gap,()=>NaN);
+    setH(px+gap,px+gap+200,x=>{ const k=(x-px-gap)/200; return top+(hill(x)-top)*k*k*(3-2*k); });   // landing pad eases back into the hills
+  }
+  // pogo: flat with spike strips
+  const p0=starts[1]; setH(p0,p0+1600,()=>BASE);
+  for(let x=p0+380; x<p0+1400; ){ const w=90+Math.round(rng()*60); spikes.push([x,x+w]); x+=w+200+Math.round(rng()*120); }   // at least 200 of safe ground between strips
+  // walk: rolling hills whose downhills will run away with you
+  const w0=starts[2]; setH(w0,w0+1100,x=>BASE-38*Math.sin((x-w0)/170)-0.04*(x-w0)*0+0);
+  const whole0=starts[3]; setH(whole0,total+400,()=>BASE);
+  const ground=x=>{ const i=Math.floor(x/STEP), f=x/STEP-i; if(i<0) return BASE; if(i+1>=hs.length) return BASE; const a=hs[i], b=hs[i+1]; return a+(b-a)*f; };
+  const slope=x=>{ const a=ground(x-4), b=ground(x+4); return a===a && b===b ? (b-a)/8 : 0; };   // gaps have no ground, so no slope
+  const pickups=[{x:starts[1]-60, part:'leg', to:'pogo', msg:'A leg! Hold to lean and hop forward. Lean too far and you tip.'},
+                 {x:starts[2]-60, part:'leg', to:'walk', msg:'Two legs, no arms. Hold to walk. Too fast and that big head topples you.'},
+                 {x:starts[3]-60, part:'arms', to:'whole', msg:'Arms! All in one piece. Run for the portal!'}];
+  const stars=[];
+  if(nStars>0){ const s=spikes[Math.min(spikes.length-1,1)]; stars.push({x:(s[0]+s[1])/2, y:BASE-170, got:false}); }
+  const w={kind:'pieces', x:b0+120, y:BASE-16, vx:0, vy:0, t:0, status:'intro', reason:'', starsGot:0, stars, spikes, pickups,
+    form:'ball', ground:true, holding:false, lean:0, wob:0, spin:0, endX:total+120, GROUND:BASE, groundAt:ground, msg:'', msgT:0, parts:[],
+    press(){ if(w.status==='ready') w.status='play'; w.holding=true; },
+    release(){ w.holding=false; },
+    slide(on){ if(on) w.press(); else w.release(); },
+    update(dt){
+      w.t+=dt; if(w.msgT>0) w.msgT-=dt;
+      if(w.status==='intro'){ if(w.t>1.4) w.status='ready'; return; }
+      if(w.status!=='play') return;
+      const g=ground(w.x);
+      if(w.form==='ball'){
+        const r=16;
+        if(w.ground){
+          const s=slope(w.x), acc=(w.holding?560:0) - GRAV*s/Math.sqrt(1+s*s)*0.9 - 0.25*w.vx;
+          w.vx=Math.max(0,Math.min(640, w.vx+acc*dt));
+          const nx=w.x+w.vx*dt, gn=ground(nx), vyNow=w.vx*s;
+          if(gn!==gn || gn-r > w.y+vyNow*dt+GRAV*dt*dt+1.5){ w.ground=false; w.vy=vyNow; w.x=nx; w.y+=vyNow*dt; }
+          else { w.x=nx; w.y=gn-r; w.vy=vyNow; }
+        } else {
+          w.vy+=GRAV*dt; w.x+=w.vx*dt; w.y+=w.vy*dt;
+          const gn=ground(w.x); if(gn===gn && w.y>=gn-r && w.vy>0){ w.y=gn-r; w.ground=true; }
+        }
+        w.spin+=w.vx*dt/r;
+      } else if(w.form==='pogo'){
+        w.lean += w.holding ? 0.9*dt : -1.2*dt; if(w.lean<0) w.lean=0;
+        if(w.lean>1.15) return fail('Leaned too far and tipped over.');
+        w.vy+=GRAV*dt; w.x+=w.vx*dt; w.y+=w.vy*dt;
+        const gn=ground(w.x);
+        if(w.vy>0 && w.y>=gn){
+          w.y=gn;
+          if(spikes.some(s=>w.x>s[0]-4 && w.x<s[1]+4)) return fail('Pogoed onto spikes.');
+          w.vy=-660; w.vx=Math.min(1,w.lean)*360; sfx.jump();
+        }
+      } else if(w.form==='walk'){
+        const s=slope(w.x);
+        w.vx += ((w.holding?260:-320) + s*GRAV*0.3)*dt; w.vx=Math.max(0,Math.min(320,w.vx));
+        w.x+=w.vx*dt; w.y=ground(w.x);
+        w.wob += (w.vx>150 ? (w.vx-150)/55 : -0.7)*dt; if(w.wob<0) w.wob=0;
+        if(w.wob>1) return fail('Too fast! Your heavy head toppled you over.');
+      } else {
+        w.vx += (w.holding?700:-200)*dt; w.vx=Math.max(120,Math.min(460,w.vx));
+        w.x+=w.vx*dt; w.y=ground(w.x);
+      }
+      if(w.y>WH+60) return fail('Rolled into a gap.');
+      for(const p of pickups){
+        if(!p.got && w.x>=p.x){
+          p.got=true; w.form=p.to; w.msg=p.msg; w.msgT=3.2; sfx.star(1);
+          if(p.to==='pogo'){ w.y=ground(w.x); w.vy=-500; w.vx=120; w.lean=0.3; }
+          if(p.to==='walk'){ w.y=ground(w.x); w.vx=Math.min(w.vx,120); w.wob=0; }
+          if(p.to==='whole'){ w.y=ground(w.x); w.vx=Math.max(w.vx,200); }
+        }
+      }
+      for(const s of stars){ if(s.got) continue; const top = w.form==='pogo' ? w.y-64 : w.y-40;
+        if(Math.abs(w.x-s.x)<26 && s.y>top-20 && s.y<w.y+20){ s.got=true; w.starsGot++; sfx.star(w.starsGot); } }
+      if(w.x>=w.endX) w.status='win';
+    }};
+  function fail(r){ w.status='fail'; w.reason=r; sfx.crash(); }
+  return w;
+}
+
 // Simple autopilots, used to check that every world layout can be beaten with all its stars
 function autopilot(w){
   if(w.kind==='plane'){
     const next=w.pipes.find(p=>p.x+w.PW/2+14>w.x) || {gy:350};
     const star=w.stars.find(s=>!s.got && s.x>w.x);
     const target = star && Math.abs(star.x-next.x)<1 ? star.y : next.gy;
-    if(w.y>target+18 && w.vy>-60) w.press();
+    // a flap rises about 90, so flapping 42 below the target keeps the plane bobbing around the middle of each gap
+    if(w.y>target+42 && w.vy>-40) w.press();
+  } else if(w.kind==='pieces'){
+    if(w.status!=='play') return;
+    if(w.form==='ball' || w.form==='whole'){ w.holding=true; return; }
+    if(w.form==='walk'){ w.holding = w.vx<138; return; }
+    // pogo: once per hop, pick a lean for the next hop whose landing clears the spikes, then steer the lean to it
+    const hop=2*660/1500, bad=x=>w.spikes.some(s=>x>s[0]-30 && x<s[1]+30);
+    if(w.vy<0 && w._hopAt!==Math.round(w.x/4) && w.vy<-600){
+      w._hopAt=Math.round(w.x/4);
+      const xl=w.x+w.vx*hop, lo=Math.max(0,w.lean-1.1*hop), hi=Math.min(1,w.lean+0.85*hop);
+      w._target=lo;
+      for(let L=hi; L>=lo; L-=0.02){ if(!bad(xl+L*360*hop)){ w._target=L; break; } }
+    }
+    const tgt=w._target??0.6;
+    w.holding = w.lean < tgt;
   } else {
     const b=w.box(), next=w.obs.find(o=>o.x+o.w>b.l);
     if(!next){ w.slide(false); return; }
@@ -652,13 +829,15 @@ function autopilot(w){
   }
 }
 function autoplay(kind, seed, nStars){
-  const w=WORLDS[kind].make(seed, nStars); w.press();
-  for(let i=0;i<120*60 && w.status==='play';i++){ autopilot(w); w.update(1/120); }
+  const w=WORLDS[kind].make(seed, nStars);
+  for(let i=0;i<400 && w.status==='intro';i++) w.update(1/120);
+  w.press(); if(w.release) w.release();
+  for(let i=0;i<120*90 && w.status==='play';i++){ autopilot(w); w.update(1/120); }
   return {status:w.status, reason:w.reason, stars:w.starsGot};
 }
 
 // Exposed for automated level checks; harmless in play.
-window.InkRider = {LEVELS, simulate, createSim, makeDaily, dayNumber, WORLDS, autoplay, autopilot, seedOf, get world(){ return world; }};
+window.InkRider = {LEVELS, SUBLEVELS, simulate, createSim, makeDaily, dayNumber, WORLDS, autoplay, autopilot, seedOf, get world(){ return world; }};
 
 /* ================= Storage ================= */
 const KEY='inkrider:v1';
@@ -731,6 +910,7 @@ let acc=0, lastT=0;
 let shake=0;
 let wipeouts=0, showHint=false, ragdoll=null, airT=0, timeScale=1;
 let world=null, warp=null, worldAcc=0, slidePointer=null;
+let nest=[];   // pages we came from when a portal opened onto a drawn world
 const reduceMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const hintBtn=$('hintBtn'), hud=$('hud');
 
@@ -755,8 +935,8 @@ function openLevel(idx){
   strokes = (save.strokes[level.id]||[]).map(s=>s.slice());
   history=[]; ghost=null; fx=[];
   wipeouts=0; showHint=false; hintBtn.hidden=true; hintBtn.classList.remove('on');
-  $('lvlNum').textContent = idx<0 ? new Date().toLocaleDateString(undefined,{month:'short',day:'numeric'}) : 'Level '+(idx+1);
-  $('lvlName').textContent = level.name;
+  nest=[];
+  setHeader();
   menu.hidden=true; resultEl.hidden=true;
   cam={z:1,cx:W/2,cy:H/2}; camBeforeRide=null;
   toEdit();
@@ -764,21 +944,26 @@ function openLevel(idx){
   resize();
   if(level.note) toast(level.note, 2600);
 }
+function setRideUI(on){
+  rideBtn.classList.toggle('stop',on); rideLbl.textContent=on?'Stop':'Ride';
+  rideBtn.querySelector('svg').innerHTML = on ? '<rect x="6" y="6" width="12" height="12" rx="2"/>' : '<path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/>';
+  [penBtn,eraseBtn,undoBtn,clearBtn,hintBtn].forEach(b=>b.disabled=on);
+  hud.hidden=!on; $('hint').classList.toggle('riding',on);
+}
+function setHeader(){
+  if(nest.length){ $('lvlNum').textContent='Through the portal'; }
+  else $('lvlNum').textContent = levelIndex<0 ? new Date().toLocaleDateString(undefined,{month:'short',day:'numeric'}) : 'Level '+(levelIndex+1);
+  $('lvlName').textContent = level.name;
+}
 function toEdit(){
   mode='edit'; sim=null;
-  rideBtn.classList.remove('stop'); rideLbl.textContent='Ride';
-  rideBtn.querySelector('svg').innerHTML='<path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/>';
-  [penBtn,eraseBtn,undoBtn,clearBtn,hintBtn].forEach(b=>b.disabled=false);
-  ragdoll=null; world=null; warp=null; slidePointer=null; hud.hidden=true; $('hint').classList.remove('riding');
+  ragdoll=null; world=null; warp=null; slidePointer=null; setRideUI(false); $('retryWorldBtn').hidden=true;
   riderAngle=0; riderFacing=(level.v||[1])[0]<0?-1:1;
 }
 function startRide(){
   if(mode!=='edit') return;
   sim=createSim(level, strokes); mode='run'; acc=0; camBeforeRide={...cam};
-  rideBtn.classList.add('stop'); rideLbl.textContent='Stop';
-  rideBtn.querySelector('svg').innerHTML='<rect x="6" y="6" width="12" height="12" rx="2"/>';
-  [penBtn,eraseBtn,undoBtn,clearBtn,hintBtn].forEach(b=>b.disabled=true);
-  airT=0; timeScale=1; hud.hidden=false; $('hint').classList.add('riding');
+  setRideUI(true); airT=0; timeScale=1;
   sfx.go();
 }
 function stopRide(){
@@ -796,6 +981,7 @@ function handleEvents(){
       warp={dir:'in', t:0, x:p.x, y:p.y, i:e.i};
     }
     else if(e.type==='star'){ sfx.star(sim.st.stars.filter(Boolean).length-1); burst(level.stars[e.i][0], level.stars[e.i][1], C.marker, 16); }
+    else if(e.type==='win' && nest.length){ sfx.win(); mode='done'; const s=sim; setTimeout(()=>{ if(sim===s && mode==='done') leaveSubLevel(); }, 600); }
     else if(e.type==='win'){ sfx.win(); confetti(); mode='done'; setTimeout(showResult, 650); }
     else if(e.type==='crash'){
       sfx.crash(); shake=10; burst(sim.st.x, sim.st.y, C.hazard, 22); mode='done';
@@ -804,7 +990,8 @@ function handleEvents(){
       ragdoll=[{k:'sled',x,y,vx:vx*0.6+r()*80,vy:vy*0.5-120,a:riderAngle,va:r()*12},
                {k:'body',x,y:y-6,vx:vx*0.8+r()*120,vy:vy*0.4-320,a:riderAngle,va:r()*16}];
       if(world){ ragdoll=null; shake=6; }
-      noteWipeout(e.reason, world ? 'Tap Stop, then Ride to try again.' : 'Tap Stop to tweak your track.');
+      noteWipeout(e.reason, world ? 'Try the world again, or tap Stop to tweak your track.' : 'Tap Stop to tweak your track.');
+      if(world) $('retryWorldBtn').hidden=false;
     }
   }
 }
@@ -814,6 +1001,33 @@ function noteWipeout(reason, next){
   const hasHint = !!(HINTS[level.id] || level.hint);
   if(wipeouts>=2 && hasHint && hintBtn.hidden){ hintBtn.hidden=false; toast(reason+' Stuck? Tap Hint for a pencil sketch.', 3000); }
   else toast(reason+' '+next, 2400);
+}
+function enterSubLevel(i){
+  const p=level.portals[i], sub=SUBLEVELS[p.sub];
+  nest.push({level, levelIndex, strokes, history, ghost, sim, cam:{...cam}, camBeforeRide, wipeouts, showHint, hintHidden:hintBtn.hidden});
+  level=sub; strokes=(save.strokes[sub.id]||[]).map(s=>s.slice()); history=[]; ghost=null; sim=null;
+  wipeouts=0; showHint=false; hintBtn.hidden=true; hintBtn.classList.remove('on');
+  cam={z:1,cx:W/2,cy:H/2}; camBeforeRide=null; applyCam();
+  setHeader(); toEdit(); updateInk();
+  warp={dir:'out', t:0, x:sub.start[0], y:sub.start[1]};
+  toast(sub.note, 3400);
+}
+function leaveSubLevel(){
+  const got=sim.st.stars.filter(Boolean).length; storeStrokes();
+  const o=nest.pop();
+  level=o.level; strokes=o.strokes; history=o.history; ghost=o.ghost; sim=o.sim; cam=o.cam; camBeforeRide=o.camBeforeRide;
+  wipeouts=o.wipeouts; showHint=o.showHint; hintBtn.hidden=o.hintHidden; hintBtn.classList.toggle('on',showHint);
+  applyCam(); setHeader(); updateInk();
+  const p=level.portals[sim.st.portal];
+  sim.exitPortal(got); mode='run'; acc=0; setRideUI(true);
+  warp={dir:'out', t:0, x:p.exit[0], y:p.exit[1]};
+  sfx.portal();
+}
+function retryWorld(){
+  if(!world || world.status!=='fail') return;
+  sim.st.status='portal'; sim.st.reason='';
+  $('retryWorldBtn').hidden=true; toastEl.classList.add('off');
+  enterWorld(sim.st.portal);
 }
 function enterWorld(i){
   const p=level.portals[i], def=WORLDS[p.world];
@@ -829,7 +1043,7 @@ function leaveWorld(){
   sfx.portal();
 }
 function showResult(){
-  if(mode!=='done' || !sim || sim.st.status!=='win') return;
+  if(mode!=='done' || !sim || sim.st.status!=='win' || nest.length) return;
   const got = sim.st.stars.filter(Boolean).length + sim.st.worldStars;
   const used = Math.round(inkUsed(strokes)/inkBudget()*100);
   const time = sim.st.t;
@@ -902,7 +1116,8 @@ function zoomAt(z, wx, wy, sx, sy){
 canvas.addEventListener('pointerdown', e=>{
   if(world && mode==='world'){
     const r=canvas.getBoundingClientRect(), left=(e.clientX-r.left)/r.width<0.4;
-    if(world.kind==='run' && left){ world.slide(true); slidePointer=e.pointerId; }
+    if(world.kind==='pieces'){ world.press(); slidePointer=e.pointerId; }
+    else if(world.kind==='run' && left){ world.slide(true); slidePointer=e.pointerId; }
     else world.press();
     return;
   }
@@ -966,6 +1181,7 @@ canvas.addEventListener('wheel', e=>{
 // Safari's own page pinch would fight ours
 document.addEventListener('gesturestart', e=>e.preventDefault());
 document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible' && actx && actx.state!=='running') actx.resume().catch(()=>{}); });
+$('retryWorldBtn').onclick=retryWorld;
 $('fitBtn').onclick=()=>{ cam={z:1,cx:W/2,cy:H/2}; applyCam(); };
 function eraseAt(x,y){
   const rr=Math.max(14, 22/view.s), r2=rr*rr, n=strokes.length;
@@ -987,7 +1203,7 @@ function tapify(el){
   el.addEventListener('pointerup', e=>{ if(e.pointerType==='mouse' || el.disabled || el.hidden) return; last=performance.now(); el.click(); });
   el.addEventListener('click', e=>{ if(e.isTrusted && performance.now()-last<700){ e.stopImmediatePropagation(); e.preventDefault(); } }, true);
 }
-['rideBtn','penBtn','eraseBtn','undoBtn','clearBtn','hintBtn','backBtn','fitBtn','retryBtn','nextBtn'].forEach(id=>tapify($(id)));
+['rideBtn','penBtn','eraseBtn','undoBtn','clearBtn','hintBtn','backBtn','fitBtn','retryBtn','nextBtn','retryWorldBtn'].forEach(id=>tapify($(id)));
 hintBtn.onclick=()=>{ if(mode!=='edit') return; showHint=!showHint; hintBtn.classList.toggle('on',showHint); if(showHint) toast('Trace the pencil sketch. It is one route that gets all three stars.', 2600); };
 $('backBtn').onclick=()=>showMenu();
 $('retryBtn').onclick=()=>stopRide();
@@ -1004,6 +1220,7 @@ function selectText(el){ const r=document.createRange(); r.selectNodeContents(el
 window.addEventListener('keydown', e=>{
   if(menu.hidden===false) return;
   if(world && mode==='world'){
+    if(world.kind==='pieces' && (e.key===' '||e.key==='ArrowRight'||e.key==='d')){ e.preventDefault(); world.press(); return; }
     if(e.key===' '||e.key==='ArrowUp'||e.key==='w'){ e.preventDefault(); if(!e.repeat) world.press(); return; }
     if(e.key==='ArrowDown'||e.key==='s'){ e.preventDefault(); world.slide(true); return; }
   }
@@ -1013,13 +1230,18 @@ window.addEventListener('keydown', e=>{
   else if(e.key==='Escape'){ if(mode!=='edit') stopRide(); else showMenu(); }
 });
 
-window.addEventListener('keyup', e=>{ if(world && (e.key==='ArrowDown'||e.key==='s')) world.slide(false); });
+window.addEventListener('keyup', e=>{
+  if(!world) return;
+  if(world.kind==='pieces' && (e.key===' '||e.key==='ArrowRight'||e.key==='d')) world.release();
+  else if(e.key==='ArrowDown'||e.key==='s') world.slide(false);
+});
 
 /* ================= Menu ================= */
 // a level opens when the one before it is done (or it was already played, so new levels never lock old progress)
 function unlocked(i){ return i===0 || !!save.levels[LEVELS[i-1].id] || !!save.levels[LEVELS[i].id]; }
 function showMenu(){
   if(mode!=='edit') stopRide();
+  if(nest.length){ const o=nest[0]; nest=[]; level=o.level; levelIndex=o.levelIndex; }
   const grid=$('levelGrid'); grid.innerHTML='';
   let total=0;
   LEVELS.forEach((lv,i)=>{
@@ -1037,9 +1259,10 @@ function showMenu(){
   const today=new Date(), dn=dayNumber(today), dlv=makeDaily(dn), rec=save.daily[dlv.id];
   $('dailyDate').textContent='Today · '+today.toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'});
   $('dailyName').textContent=dlv.name;
+  const dp=(dlv.portals||[])[0];
   const sk=save.streak, alive = sk && sk.count>0 && sk.last>=dn-1;
   const streakTag = alive ? `<span class="streak">${sk.count}-day streak</span>` : '';
-  $('dailyBest').innerHTML = (rec ? `Best: ${[0,1,2].map(k=>k<rec.stars?'★':'☆').join('')} · ${rec.ink}% ink · ${rec.time}s` : (alive ? 'Ride today to keep your streak going.' : 'A new page every day. Not ridden yet.'))+streakTag;
+  $('dailyBest').innerHTML = (rec ? `Best: ${[0,1,2].map(k=>k<rec.stars?'★':'☆').join('')} · ${rec.ink}% ink · ${rec.time}s` : (alive ? 'Ride today to keep your streak going.' : 'A new page every day. Not ridden yet.'))+(dp?` · Portal day: ${WORLDS[dp.world].name}`:'')+streakTag;
   $('dailyBtn').textContent = rec ? 'Ride again' : "Ride today's";
   $('muteBtn').innerHTML=SPEAKER(save.muted); $('muteBtn').setAttribute('aria-label', save.muted?'Sound off':'Sound on');
   menu.hidden=false; menu.scrollTop=0;
@@ -1139,6 +1362,7 @@ function drawSpikes(){
 }
 function drawGoal(t){
   const [x,y]=level.goal;
+  if(level.goalPortal){ drawPortal(x,y,GOAL_R+8,t,false); return; }
   ctx.save();
   ctx.globalAlpha=0.35; ctx.fillStyle=C.marker; ctx.beginPath(); ctx.arc(x,y,GOAL_R+Math.sin(t*3)*2,0,7); ctx.fill(); ctx.globalAlpha=1;
   ctx.strokeStyle=C.fg; ctx.lineWidth=2.5; ctx.lineCap='round';
@@ -1291,9 +1515,10 @@ function drawWorld(t,dt){
   ctx.save(); ctx.beginPath(); ctx.rect(0,0,v.vis,WH); ctx.clip();
   ctx.fillStyle=C.paper; ctx.fillRect(0,0,v.vis,WH);
   const lead=Math.min(240, v.vis*0.28), camX=w.x-lead;
-  if(w.kind==='plane') drawPlaneWorld(w,t,camX,v.vis); else drawRunWorld(w,t,camX,v.vis);
+  if(w.kind==='plane') drawPlaneWorld(w,t,camX,v.vis); else if(w.kind==='pieces') drawPiecesWorld(w,t,camX,v.vis); else drawRunWorld(w,t,camX,v.vis);
   // exit portal at the end of the course
   const ey = w.kind==='plane' ? 350 : w.GROUND-60;
+  if(w.msgT>0){ ctx.save(); ctx.globalAlpha=Math.min(1,w.msgT); ctx.fillStyle=C.fg; ctx.textAlign='center'; ctx.font=`800 22px ${getComputedStyle(document.body).getPropertyValue('--font-display')||'sans-serif'}`; wrapText(w.msg, v.vis/2, 70, v.vis-60, 28); ctx.restore(); }
   drawPortal(w.endX+30-camX, ey, 60, t, false);
   ctx.restore();
   // title card until the first tap
@@ -1321,6 +1546,80 @@ function drawWorld(t,dt){
     ctx.fillText('hold: slide', v.vis*0.2, 70); ctx.fillText('tap: jump', v.vis*0.7, 70);
     ctx.restore();
   }
+}
+function wrapText(text, x, y, maxW, lh){
+  let line='', yy=y;
+  for(const word of text.split(' ')){ const t=line?line+' '+word:word; if(ctx.measureText(t).width>maxW && line){ ctx.fillText(line,x,yy); yy+=lh; line=word; } else line=t; }
+  ctx.fillText(line,x,yy); return yy;
+}
+function stickHead(x,y,r){
+  ctx.fillStyle=C.paper; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill(); ctx.stroke();
+  ctx.fillStyle=C.ink; ctx.beginPath(); ctx.arc(x,y-r*0.3,r*1.04,Math.PI,0); ctx.fill();
+}
+function drawPiecesWorld(w,t,camX,vis){
+  // grid paper with a pencil-line landscape
+  ctx.save(); ctx.strokeStyle=C.grid; ctx.lineWidth=1.5;
+  const off=((-camX)%40+40)%40; for(let x=off;x<vis;x+=40){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,WH); ctx.stroke(); }
+  for(let y=0;y<WH;y+=40){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(vis,y); ctx.stroke(); }
+  ctx.restore();
+  ctx.save(); ctx.strokeStyle=C.pencil; ctx.lineWidth=6; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.beginPath();
+  let pen=false;
+  for(let sx=-10; sx<=vis+10; sx+=8){ const gy=w.groundAt(sx+camX); if(gy!==gy){ pen=false; continue; } if(!pen){ ctx.moveTo(sx,gy); pen=true; } else ctx.lineTo(sx,gy); }
+  ctx.stroke(); ctx.restore();
+  ctx.fillStyle=C.hazard;
+  for(const s of w.spikes){ const a=s[0]-camX, b=s[1]-camX; if(b<-20||a>vis+20) continue; ctx.beginPath();
+    for(let x=a;x<b;x+=14){ ctx.moveTo(x,w.GROUND); ctx.lineTo(x+7,w.GROUND-16); ctx.lineTo(x+14,w.GROUND); } ctx.fill(); }
+  // missing body parts waiting along the course
+  ctx.lineCap='round'; ctx.strokeStyle=C.fg; ctx.lineWidth=4;
+  for(const p of w.pickups){
+    if(p.got) continue; const x=p.x-camX, y=w.groundAt(p.x)-40+Math.sin(t*3+p.x)*4; if(x<-60||x>vis+60) continue;
+    ctx.save(); ctx.globalAlpha=0.3; ctx.fillStyle=C.marker; ctx.beginPath(); ctx.arc(x,y,30,0,7); ctx.fill(); ctx.restore();
+    ctx.save(); ctx.translate(x,y); ctx.rotate(Math.sin(t*2+p.x)*0.3);
+    if(p.part==='leg'){ ctx.beginPath(); ctx.moveTo(-4,-18); ctx.lineTo(2,4); ctx.lineTo(-2,18); ctx.lineTo(8,18); ctx.stroke(); }
+    else { ctx.beginPath(); ctx.moveTo(-18,-6); ctx.lineTo(-4,0); ctx.lineTo(-14,10); ctx.moveTo(18,-6); ctx.lineTo(4,0); ctx.lineTo(14,10); ctx.stroke(); }
+    ctx.restore();
+  }
+  for(const s of w.stars){ if(s.got) continue; starPath(s.x-camX, s.y+Math.sin(t*3)*3, 18); ctx.fillStyle=C.marker; ctx.fill(); ctx.lineWidth=2.5; ctx.strokeStyle=C.fg; ctx.stroke(); }
+  const px=w.x-camX, y=w.y;
+  ctx.save(); ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle=C.fg; ctx.lineWidth=4;
+  if(w.status==='intro'){
+    // the stick figure comes apart: head-and-body ball drops in, limbs scatter off ahead
+    const k=Math.min(1,w.t/1.2);
+    ctx.save(); ctx.translate(px, y-(1-k)*(1-k)*260); ctx.rotate(k*8); ctx.beginPath(); ctx.arc(0,0,16,0,7); ctx.fillStyle=C.paper; ctx.fill(); ctx.stroke(); stickHead(0,-6,7); ctx.restore();
+    [[1.0,-1.6],[1.4,-1.1],[1.8,-1.4],[2.2,-0.9]].forEach(([vx,vy],i)=>{
+      const tt=w.t*1.4, lx=px+vx*tt*300, ly=y-120+vy*tt*300+tt*tt*260; ctx.save(); ctx.translate(lx,ly); ctx.rotate(tt*(6+i)); ctx.beginPath(); ctx.moveTo(-10,0); ctx.lineTo(10,0); ctx.stroke(); ctx.restore();
+    });
+  } else if(w.form==='ball'){
+    ctx.translate(px,y); ctx.rotate(w.spin);
+    ctx.fillStyle=C.paper; ctx.beginPath(); ctx.arc(0,0,16,0,7); ctx.fill(); ctx.stroke();
+    ctx.lineWidth=3; ctx.beginPath(); ctx.arc(0,0,9,0.4,2.6); ctx.stroke();
+    ctx.lineWidth=2.5; stickHead(0,-7,6);
+  } else if(w.form==='pogo'){
+    ctx.translate(px,y); ctx.rotate(Math.min(1.3,w.lean)*0.55);
+    const sq=Math.max(0,Math.min(1,(w.vy+660)/1320));
+    ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,-8);
+    for(let i=0;i<5;i++) ctx.lineTo(i%2?-5:5, -8-i*3-sq*2); ctx.lineTo(0,-26); ctx.lineTo(0,-40); ctx.moveTo(-8,-26); ctx.lineTo(8,-26); ctx.stroke();
+    ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(2,-28); ctx.lineTo(4,-42); ctx.lineTo(2,-58); ctx.stroke();
+    ctx.lineWidth=3; stickHead(3,-66,8);
+  } else if(w.form==='walk'){
+    const ph=t*9*(w.vx/140+0.2), a=Math.sin(ph)*0.6, b=-a, sway=Math.sin(t*7)*w.wob*0.7+w.wob*0.4;
+    ctx.translate(px,y);
+    ctx.beginPath(); ctx.moveTo(0,-24); ctx.lineTo(Math.sin(a)*12,0); ctx.moveTo(0,-24); ctx.lineTo(Math.sin(b)*12,0); ctx.stroke();
+    ctx.save(); ctx.translate(0,-24); ctx.rotate(sway);
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,-24); ctx.stroke(); ctx.lineWidth=3; stickHead(0,-38,14);
+    ctx.restore();
+    if(w.wob>0.35){ ctx.fillStyle=C.hazard; ctx.font='800 24px sans-serif'; ctx.textAlign='center'; ctx.fillText('!', 0, -80); }
+  } else {
+    ctx.translate(px,y); ctx.scale(1.9,1.9); ctx.lineWidth=2.4;
+    const ph=t*16, a=Math.sin(ph)*0.7, b=Math.sin(ph+Math.PI)*0.7;
+    ctx.beginPath();
+    ctx.moveTo(0,-12); ctx.lineTo(Math.sin(a)*9, -12+Math.cos(a)*6); ctx.lineTo(Math.sin(a)*9-3, 0);
+    ctx.moveTo(0,-12); ctx.lineTo(Math.sin(b)*9, -12+Math.cos(b)*6); ctx.lineTo(Math.sin(b)*9-3, 0);
+    ctx.moveTo(0,-12); ctx.lineTo(2,-24); ctx.moveTo(1,-20); ctx.lineTo(8+a*3,-15); ctx.moveTo(1,-20); ctx.lineTo(-6+b*3,-15); ctx.stroke();
+    ctx.strokeStyle=C.hazard; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(1,-24); ctx.quadraticCurveTo(-8,-25,-15,-22); ctx.stroke();
+    ctx.strokeStyle=C.fg; ctx.lineWidth=2.4; stickHead(3,-29,4.6);
+  }
+  ctx.restore();
 }
 function pencil(x, tipY, dir, PW){
   // a yellow pencil whose sharpened tip points into the gap at tipY; dir=1 points down, -1 up
@@ -1416,7 +1715,47 @@ function drawWarp(dt){
   ctx.fillStyle=C.portal;
   if(warp.dir==='in'){ ctx.beginPath(); ctx.arc(sx,sy,e*maxR,0,7); ctx.fill(); }
   else { ctx.beginPath(); ctx.rect(0,0,view.cw,view.ch); ctx.arc(sx,sy,e*maxR,0,7,true); ctx.fill('evenodd'); }
-  if(k>=1){ const d=warp; warp=null; if(d.dir==='in') enterWorld(d.i); }
+  if(k>=1){ const d=warp; warp=null; if(d.dir==='in'){ level.portals[d.i].sub ? enterSubLevel(d.i) : enterWorld(d.i); } }
+}
+function spearArc(g){
+  const pts=[g.x+g.dir*12, g.y-30]; let x=pts[0], y=pts[1], vx=g.v[0], vy=g.v[1];
+  for(let i=0;i<240;i++){ vy+=SPEAR_G/60; x+=vx/60; y+=vy/60; pts.push(x,y); if(y>H||x<0||x>W) break; }
+  return pts;
+}
+function drawSpearArcs(){
+  if(mode!=='edit') return;
+  ctx.save(); ctx.strokeStyle=C.hazard; ctx.globalAlpha=0.45; ctx.lineWidth=2.5; ctx.setLineDash([3,9]); ctx.lineCap='round';
+  for(const g of level.goblins||[]){ pathPoly(spearArc(g)); ctx.stroke(); }
+  ctx.restore();
+}
+function spear(x,y,vx,vy){
+  const L=Math.hypot(vx,vy)||1, ux=vx/L, uy=vy/L;
+  ctx.save(); ctx.strokeStyle=C.fg; ctx.lineWidth=2.5; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(x-ux*SPEAR_LEN, y-uy*SPEAR_LEN); ctx.lineTo(x-ux*4, y-uy*4); ctx.stroke();
+  ctx.fillStyle=C.hazard; ctx.beginPath(); ctx.moveTo(x+ux*4,y+uy*4); ctx.lineTo(x-ux*6-uy*4, y-uy*6+ux*4); ctx.lineTo(x-ux*6+uy*4, y-uy*6-ux*4); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function drawGoblins(t){
+  const gobs=level.goblins||[]; if(!gobs.length) return;
+  gobs.forEach((g,i)=>{
+    // arm whips forward right after a throw; in edit mode they wind up on their beat so you can read the rhythm
+    const since = sim ? sim.st.t-sim.st.throwT[i] : ((t - (g.t0||0)) % g.every + g.every) % g.every;
+    const swing = since<0.25 ? 1-since/0.25 : 0;
+    ctx.save(); ctx.translate(g.x,g.y); ctx.scale(g.dir,1);
+    ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle=C.fg; ctx.lineWidth=2.4;
+    ctx.beginPath(); ctx.moveTo(-5,0); ctx.lineTo(0,-10); ctx.lineTo(5,0); ctx.moveTo(0,-10); ctx.lineTo(0,-20); ctx.stroke();
+    ctx.fillStyle=C.boost; ctx.beginPath(); ctx.ellipse(0,-27,8,7,0,0,7); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-6,-31); ctx.lineTo(-11,-38); ctx.lineTo(-3,-33); ctx.moveTo(6,-31); ctx.lineTo(11,-38); ctx.lineTo(3,-33); ctx.stroke();
+    ctx.fillStyle=C.fg; ctx.beginPath(); ctx.arc(3,-28,1.4,0,7); ctx.fill();
+    const a=-0.4-swing*1.4; ctx.beginPath(); ctx.moveTo(0,-18); ctx.lineTo(Math.cos(a)*-10, -18+Math.sin(a)*10); ctx.stroke();
+    if(swing===0 || !sim) { ctx.restore(); spearInHand(g,a); return; }
+    ctx.restore();
+  });
+  if(sim) for(const s of sim.st.spears){ ctx.save(); if(s.stuck) ctx.globalAlpha=Math.max(0.25,1-(s.age-1)/6); spear(s.x,s.y,s.vx,s.vy); ctx.restore(); }
+}
+function spearInHand(g,a){
+  const hx=g.x+g.dir*Math.cos(a)*-10, hy=g.y-18+Math.sin(a)*10;
+  spear(hx+g.v[0]*0.02, hy+g.v[1]*0.02, g.v[0], g.v[1]);
 }
 function drawStartMarker(){
   const [x,y]=level.start;
@@ -1457,7 +1796,7 @@ function frame(now){
   if(world){
     if(mode==='world'){
       worldAcc+=dt;
-      while(worldAcc>=1/120 && (world.status==='play'||world.status==='ready')){ world.update(1/120); worldAcc-=1/120; }
+      while(worldAcc>=1/120 && (world.status==='play'||world.status==='ready'||world.status==='intro')){ world.update(1/120); worldAcc-=1/120; }
       if(world.status==='win') leaveWorld();
       else if(world.status==='fail'){ mode='done'; sim.failPortal(world.reason); handleEvents(); }
     }
@@ -1510,7 +1849,7 @@ function frame(now){
     ctx.setTransform(dpr*view.s,0,0,dpr*view.s,dpr*view.ox,dpr*view.oy);
     ctx.save(); ctx.shadowColor='rgba(10,30,60,.18)'; ctx.shadowBlur=18; ctx.shadowOffsetY=4; ctx.fillStyle=C.paper; ctx.fillRect(0,0,W,H); ctx.restore();
     ctx.save(); ctx.beginPath(); ctx.rect(0,0,W,H); ctx.clip();
-    drawPaper(); drawNoDraw(); drawGhost(); drawHint(); drawFixed(); drawInk();
+    drawPaper(); drawNoDraw(); drawGhost(); drawHint(); drawSpearArcs(); drawFixed(); drawInk();
     if(mode==='edit') drawStartMarker();
     ctx.restore();
     ctx=mainCtx;
@@ -1521,7 +1860,7 @@ function frame(now){
   ctx.drawImage(layer, sx*dpr, sy*dpr);
   ctx.setTransform(dpr*view.s,0,0,dpr*view.s,dpr*(view.ox+sx),dpr*(view.oy+sy));
   ctx.save(); ctx.beginPath(); ctx.rect(0,0,W,H); ctx.clip();
-  drawChevrons(); drawPortals(t); drawGoal(t); drawStars(t);
+  drawChevrons(); drawPortals(t); drawGoal(t); drawStars(t); drawGoblins(t);
   drawTrail();
   if(ragdoll) drawRagdoll(dt,t);
   else if(sim) drawRider(sim.st.x, sim.st.y, t);
