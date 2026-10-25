@@ -29,6 +29,8 @@
     --hazard:#d9432c;    /* red pencil spikes */
     --boost:#0f9a64;     /* green booster pads */
     --marker:#ffbf1f;    /* highlighter: stars + flag */
+    --portal:#7b3ff2;    /* portals to other worlds */
+    --wood:#f0d3a5; --eraser:#f3a0b6;
     --fg:#17202c;
     --muted:#5b6876;
     --surface:#ffffff;
@@ -41,14 +43,14 @@
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
       --desk:#081221; --paper:#0f2546; --grid:#1a3a68; --grid-major:#24497f;
-      --ink:#f1f5ff; --pencil:#8eb2e6; --hazard:#ff6a52; --boost:#3ee39a; --marker:#ffd245;
+      --ink:#f1f5ff; --pencil:#8eb2e6; --hazard:#ff6a52; --boost:#3ee39a; --marker:#ffd245; --portal:#c39bff; --wood:#c8a676; --eraser:#e88aa5;
       --fg:#e7eefb; --muted:#92a5c3; --surface:#13305a; --line:#24497f;
       color-scheme:dark;
     }
   }
   :root[data-theme="dark"]{
     --desk:#081221; --paper:#0f2546; --grid:#1a3a68; --grid-major:#24497f;
-    --ink:#f1f5ff; --pencil:#8eb2e6; --hazard:#ff6a52; --boost:#3ee39a; --marker:#ffd245;
+    --ink:#f1f5ff; --pencil:#8eb2e6; --hazard:#ff6a52; --boost:#3ee39a; --marker:#ffd245; --portal:#c39bff; --wood:#c8a676; --eraser:#e88aa5;
     --fg:#e7eefb; --muted:#92a5c3; --surface:#13305a; --line:#24497f;
     color-scheme:dark;
   }
@@ -286,6 +288,7 @@
       <span><i style="background:var(--pencil)"></i>printed ground</span>
       <span><i style="background:var(--boost)"></i>booster: speeds you up along the arrows</span>
       <span><i style="background:var(--hazard)"></i>spikes</span>
+      <span><i style="background:var(--portal)"></i>portal: ride in to visit another world</span>
     </div>
   </div>
 </div>
@@ -303,7 +306,7 @@ const FRICTION = 0.12;            // tangential loss per second while touching a
 const DRAG = 0.03;                // air drag per second
 const VMAX = 2300;
 const DT = 1/240;
-const STAR_R = 16, GOAL_R = 26;
+const STAR_R = 16, GOAL_R = 26, PORTAL_R = 26;
 const MAX_TIME = 30, STALL_TIME = 1.2;
 
 function polySegs(poly, kind, out){
@@ -322,6 +325,7 @@ function levelSegs(lv){
   (lv.spikes||[]).forEach(p=>polySegs(p,'spike',out));
   return out;
 }
+function totalStars(lv){ return lv.stars.length+(lv.portals||[]).reduce((a,p)=>a+(p.stars||0),0); }
 function strokeLen(s){ let L=0; for(let i=0;i+3<s.length;i+=2) L+=Math.hypot(s[i+2]-s[i], s[i+3]-s[i+1]); return L; }
 function inkUsed(strokes){ return strokes.reduce((a,s)=>a+strokeLen(s),0); }
 
@@ -330,7 +334,7 @@ function createSim(lv, strokes){
   strokes.forEach(s=>polySegs(s,'ink',segs));
   const st = {
     x:lv.start[0], y:lv.start[1], vx:(lv.v||[90,0])[0], vy:(lv.v||[90,0])[1],
-    t:0, status:'run', reason:'', stars:lv.stars.map(()=>false), contact:null, slow:0, events:[], trail:[], tick:0
+    t:0, status:'run', reason:'', stars:lv.stars.map(()=>false), worldStars:0, used:[], portal:-1, contact:null, slow:0, events:[], trail:[], tick:0
   };
   function finish(status, reason){ st.status=status; st.reason=reason||''; st.events.push({type:status, reason}); }
   function step(){
@@ -362,6 +366,11 @@ function createSim(lv, strokes){
     }
     const sp = Math.hypot(st.vx, st.vy);
     if(sp>VMAX){ st.vx*=VMAX/sp; st.vy*=VMAX/sp; }
+    // a portal pauses the page; the game plays its world, then calls exitPortal or failPortal
+    for(let i=0;i<(lv.portals||[]).length;i++){
+      const p=lv.portals[i];
+      if(!st.used[i] && (st.x-p.x)**2+(st.y-p.y)**2 < (R+PORTAL_R)**2){ st.status='portal'; st.portal=i; st.events.push({type:'portal', i}); return; }
+    }
     lv.stars.forEach((s,i)=>{
       if(!st.stars[i] && (st.x-s[0])**2+(st.y-s[1])**2 < (R+STAR_R)**2){ st.stars[i]=true; st.events.push({type:'star', i}); }
     });
@@ -372,12 +381,22 @@ function createSim(lv, strokes){
     if(sp<22){ st.slow+=DT; if(st.slow>STALL_TIME){ finish('crash','Ran out of steam.'); return; } } else st.slow=0;
     if(st.t>MAX_TIME){ finish('crash','Out of time.'); return; }
   }
-  return {st, step, segs};
+  function exitPortal(stars){
+    const p=lv.portals[st.portal];
+    st.used[st.portal]=true; st.worldStars+=stars;
+    st.trail.push(NaN,NaN);   // break the trail between the two portals
+    st.x=p.exit[0]; st.y=p.exit[1]; st.vx=p.v[0]; st.vy=p.v[1]; st.slow=0; st.status='run';
+  }
+  function failPortal(reason){ finish('crash', reason); }
+  return {st, step, segs, exitPortal, failPortal};
 }
 function simulate(lv, strokes){
   const sim = createSim(lv, strokes);
-  while(sim.st.status==='run') sim.step();
-  return {status:sim.st.status, reason:sim.st.reason, stars:sim.st.stars.filter(Boolean).length, time:sim.st.t};
+  // headless runs assume each world is played perfectly (worlds are checked by their own autopilot)
+  while(sim.st.status==='run' || sim.st.status==='portal'){
+    if(sim.st.status==='portal') sim.exitPortal(lv.portals[sim.st.portal].stars||0); else sim.step();
+  }
+  return {status:sim.st.status, reason:sim.st.reason, stars:sim.st.stars.filter(Boolean).length+sim.st.worldStars, time:sim.st.t};
 }
 
 /* ================= Levels ================= */
@@ -397,6 +416,10 @@ const LEVELS = [
   { id:'booster', name:'Booster', note:'Green pads add speed in the arrow direction',
     start:[70,372], ground:[ledge(70,372)], boost:[[330,560,560,560]], goal:[900,160], ink:1300,
     stars:[[450,544],[690,420],[820,250]] },
+  { id:'paper-skies', name:'Paper Skies', note:'Ride into the portal. In there, tap to fly.',
+    start:[70,92], ground:[ledge(70,92)], spikes:[[0,690,1000,690]], goal:[900,600], ink:1200,
+    portals:[{x:520,y:340, world:'plane', exit:[560,140], v:[220,0], stars:1}],
+    stars:[[330,262],[760,330]] },
   { id:'spike-garden', name:'Spike Garden', note:'Bridge over the spikes',
     start:[70,92], ground:[ledge(70,92)],
     spikes:[[250,560,330,480,410,560,490,480,570,560,650,480,730,560]], goal:[900,600], ink:1250,
@@ -404,6 +427,10 @@ const LEVELS = [
   { id:'switchback', name:'Switchback', note:'Fly off your line into a curved wall to turn around',
     start:[70,92], ground:[ledge(70,92)], goal:[110,620], ink:1900,
     stars:[[480,280],[860,440],[460,600]] },
+  { id:'doodle-dash', name:'Doodle Dash', note:'Through the portal you run. Jump on the right, slide on the left.',
+    start:[70,82], ground:[ledge(70,82)], spikes:[[0,690,1000,690]], goal:[880,620], ink:1300,
+    portals:[{x:430,y:520, world:'run', exit:[560,120], v:[200,0], stars:1}],
+    stars:[[300,380],[720,330]] },
   { id:'needle', name:'Thread the Needle', note:'Fly through the slot',
     start:[70,92], ground:[ledge(70,92)],
     nodraw:[[380,0,170,700]], spikes:[[465,0,465,300],[465,420,465,700]], goal:[880,580], ink:1100,
@@ -438,7 +465,9 @@ const HINTS = {
   'zigzag': [[194,156,300,220,500,270,700,300],[790,240,900,300,940,380,900,450,800,480,500,500,300,505,200,505],[120,420,60,480,60,580,140,640,900,662,960,662]],
   'launch': [[198,608,225,622,480,622,560,604,640,556,720,450,790,330,850,210,866,170]],
   'grand-tour': [[194,146,400,140,700,170,880,194],[900,120,960,220,960,420,880,540,700,570,400,580],[300,500,200,560,140,652,60,660]],
-  'half-pipe': [[796,166,720,260,670,380,650,402,640,402],[380,402,250,400,160,372,110,300,100,220,130,150,200,112,300,112]]
+  'half-pipe': [[796,166,720,260,670,380,650,402,640,402],[380,402,250,400,160,372,110,300,100,220,130,150,200,112,300,112]],
+  'paper-skies': [[194,166,250,220,330,276,450,330,520,352,560,356],[585,168,680,240,760,346,840,500,900,612,960,620]],
+  'doodle-dash': [[194,156,240,240,300,392,360,470,430,532,470,540],[570,140,720,342,880,632,960,640]]
 };
 
 /* ================= Daily generator ================= */
@@ -533,8 +562,103 @@ function mirror(lv){
   lv.nodraw=lv.nodraw.map(r=>[W-r[0]-r[2],r[1],r[2],r[3]]); lv._mirrored=true;
 }
 
+
+/* ================= Portal worlds ================= */
+// Each world is a short tap-controlled run on its own page, 700 units tall and as wide as the screen allows.
+// update(dt) advances it; status goes ready -> play -> win | fail.
+const WH = 700;
+function seedOf(s){ let h=2166136261; for(const c of s){ h^=c.charCodeAt(0); h=Math.imul(h,16777619); } return h>>>0; }
+const WORLDS = {
+  plane: { name:'Paper Skies', how:'Tap to flap. Fly between the pencils.', make:makePlaneWorld },
+  run:   { name:'Doodle Dash', how:'Tap the right side to jump. Hold the left side to slide.', make:makeRunWorld },
+};
+function makePlaneWorld(seed, nStars){
+  const rng=mulberry(seed), SPEED=300, GRAV=1500, FLAP=520, GAP=240, SPACING=360, N=10, PW=74;
+  const pipes=[]; let gy=350;
+  for(let i=0;i<N;i++){ gy=Math.max(170,Math.min(530, gy+(rng()-0.5)*300)); pipes.push({x:760+i*SPACING, gy:Math.round(gy)}); }
+  const stars=[]; for(let k=0;k<nStars;k++){ const p=pipes[3+Math.floor(k*(N-4)/Math.max(1,nStars))+2]; stars.push({x:p.x, y:p.gy, got:false}); }
+  const w={kind:'plane', x:0, y:350, vy:0, t:0, status:'ready', reason:'', starsGot:0, pipes, stars, endX:760+N*SPACING+120, PW, GAP,
+    press(){ if(w.status==='ready') w.status='play'; if(w.status!=='play') return; w.vy=-FLAP; sfx.flap(); },
+    slide(){},
+    update(dt){
+      w.t+=dt;
+      if(w.status==='ready'){ w.y=350+Math.sin(w.t*3)*10; return; }
+      if(w.status!=='play') return;
+      w.vy=Math.min(900, w.vy+GRAV*dt); w.y+=w.vy*dt; w.x+=SPEED*dt;
+      if(w.y<14){ w.y=14; w.vy=Math.max(0,w.vy); }
+      if(w.y>WH-14) return fail('Nosedived into the floor.');
+      for(const p of pipes){
+        const dx=Math.abs(w.x-p.x); if(dx>PW/2+14) continue;
+        // pencil tips are narrower, so the last 46 units of each pencil only collide near its middle
+        const top=p.gy-GAP/2, bot=p.gy+GAP/2, inTip=dx<PW*0.25+10;
+        const hitTop = w.y-12 < top-46 || (inTip && w.y-12 < top);
+        const hitBot = w.y+12 > bot+46 || (inTip && w.y+12 > bot);
+        if(hitTop||hitBot) return fail('Bonked a pencil.');
+      }
+      for(const s of stars) if(!s.got && (w.x-s.x)**2+(w.y-s.y)**2 < 56*56){ s.got=true; w.starsGot++; sfx.star(w.starsGot); }
+      if(w.x>=w.endX){ w.status='win'; }
+    }};
+  function fail(r){ w.status='fail'; w.reason=r; sfx.crash(); }
+  return w;
+}
+function makeRunWorld(seed, nStars){
+  const rng=mulberry(seed), SPEED=360, GRAV=2600, JUMP=920, GROUND=560, N=13;
+  const obs=[]; let x=820;
+  for(let i=0;i<N;i++){
+    const r=rng(), kind = i<2 ? 'blot' : r<0.42 ? 'blot' : r<0.7 ? 'bar' : 'block';
+    if(kind==='blot') obs.push({kind, x, w:46+Math.round(rng()*26), h:38+Math.round(rng()*22), seed:rng()});
+    else if(kind==='block') obs.push({kind, x, w:46, h:92});
+    else obs.push({kind, x, w:120, h:GROUND-40});   // hanging ruler: bottom edge 40 above the line
+    x += 440+Math.round(rng()*200);
+  }
+  const blots=obs.filter(o=>o.kind==='blot'), stars=[];
+  for(let k=0;k<nStars;k++){ const o=blots[Math.min(blots.length-1, 2+k*2)]; stars.push({x:o.x+o.w/2, y:GROUND-190, got:false}); }
+  const w={kind:'run', x:0, y:GROUND, vy:0, t:0, status:'ready', reason:'', starsGot:0, obs, stars, endX:x+60, GROUND,
+    sliding:false, holding:false, ground:true,
+    press(){ if(w.status==='ready'){ w.status='play'; return; } if(w.status!=='play' || !w.ground) return; w.vy=-JUMP; w.ground=false; sfx.jump(); },
+    slide(on){ if(w.status==='ready' && on){ w.status='play'; } w.holding=on; if(on && w.ground && !w.sliding) sfx.slide(); },
+    box(){ const h = w.sliding ? 24 : 54; return {l:w.x-13, r:w.x+13, t:w.y-h, b:w.y}; },
+    update(dt){
+      w.t+=dt;
+      if(w.status!=='play') return;
+      w.x+=SPEED*dt;
+      if(!w.ground){ w.vy+=GRAV*dt + (w.holding?3200*dt:0); w.y+=w.vy*dt; if(w.y>=GROUND){ w.y=GROUND; w.vy=0; w.ground=true; } }
+      w.sliding = w.ground && w.holding;
+      const b=w.box();
+      for(const o of obs){
+        if(b.r<o.x || b.l>o.x+o.w) continue;
+        const ot = o.kind==='bar' ? 0 : GROUND-o.h, ob = o.kind==='bar' ? o.h : GROUND;
+        if(b.b>ot+2 && b.t<ob) return fail(o.kind==='bar' ? 'Smacked into a ruler.' : o.kind==='block' ? 'Tripped over an eraser.' : 'Splat. Ink blot.');
+      }
+      for(const s of stars) if(!s.got && s.x>b.l-22 && s.x<b.r+22 && s.y>b.t-22 && s.y<b.b+22){ s.got=true; w.starsGot++; sfx.star(w.starsGot); }
+      if(w.x>=w.endX) w.status='win';
+    }};
+  function fail(r){ w.status='fail'; w.reason=r; sfx.crash(); }
+  return w;
+}
+// Simple autopilots, used to check that every world layout can be beaten with all its stars
+function autopilot(w){
+  if(w.kind==='plane'){
+    const next=w.pipes.find(p=>p.x+w.PW/2+14>w.x) || {gy:350};
+    const star=w.stars.find(s=>!s.got && s.x>w.x);
+    const target = star && Math.abs(star.x-next.x)<1 ? star.y : next.gy;
+    if(w.y>target+18 && w.vy>-60) w.press();
+  } else {
+    const b=w.box(), next=w.obs.find(o=>o.x+o.w>b.l);
+    if(!next){ w.slide(false); return; }
+    const dx=next.x-b.r;
+    if(next.kind==='bar'){ w.slide(dx<150); }
+    else { w.slide(false); if(dx<92 && w.ground) w.press(); }
+  }
+}
+function autoplay(kind, seed, nStars){
+  const w=WORLDS[kind].make(seed, nStars); w.press();
+  for(let i=0;i<120*60 && w.status==='play';i++){ autopilot(w); w.update(1/120); }
+  return {status:w.status, reason:w.reason, stars:w.starsGot};
+}
+
 // Exposed for automated level checks; harmless in play.
-window.InkRider = {LEVELS, simulate, createSim, makeDaily, dayNumber};
+window.InkRider = {LEVELS, simulate, createSim, makeDaily, dayNumber, WORLDS, autoplay, autopilot, seedOf, get world(){ return world; }};
 
 /* ================= Storage ================= */
 const KEY='inkrider:v1';
@@ -559,7 +683,7 @@ const SPEAKER = m => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 let C={};
 function readColors(){
   const cs=getComputedStyle(document.documentElement);
-  ['desk','paper','grid','grid-major','ink','pencil','hazard','boost','marker','fg','muted'].forEach(k=>C[k]=cs.getPropertyValue('--'+k).trim());
+  ['desk','paper','grid','grid-major','ink','pencil','hazard','boost','marker','fg','muted','portal','wood','eraser'].forEach(k=>C[k]=cs.getPropertyValue('--'+k).trim());
 }
 readColors();
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', readColors);
@@ -579,6 +703,10 @@ function tone(freq, dur, type='triangle', vol=0.05, slide=0){
   }catch(e){}
 }
 const sfx = {
+  flap(){ tone(540,0.07,'square',0.025,1.5); },
+  jump(){ tone(380,0.13,'triangle',0.05,1.9); },
+  slide(){ tone(260,0.16,'sawtooth',0.02,0.5); },
+  portal(){ tone(300,0.5,'sine',0.06,4); setTimeout(()=>tone(900,0.25,'triangle',0.04,1.5),220); },
   land(v){ tone(120+Math.min(80,v/10),0.09,'sine',Math.min(0.07,0.02+v/12000)); },
   star(i){ tone(660*Math.pow(1.26,i),0.18,'triangle',0.06); },
   win(){ [523,659,784,1046].forEach((f,i)=>setTimeout(()=>tone(f,0.22,'triangle',0.06),i*90)); },
@@ -602,6 +730,7 @@ const pointers=new Map(); let gesture=null, gestureLock=false;
 let acc=0, lastT=0;
 let shake=0;
 let wipeouts=0, showHint=false, ragdoll=null, airT=0, timeScale=1;
+let world=null, warp=null, worldAcc=0, slidePointer=null;
 const reduceMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const hintBtn=$('hintBtn'), hud=$('hud');
 
@@ -640,7 +769,7 @@ function toEdit(){
   rideBtn.classList.remove('stop'); rideLbl.textContent='Ride';
   rideBtn.querySelector('svg').innerHTML='<path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/>';
   [penBtn,eraseBtn,undoBtn,clearBtn,hintBtn].forEach(b=>b.disabled=false);
-  ragdoll=null; hud.hidden=true; $('hint').classList.remove('riding');
+  ragdoll=null; world=null; warp=null; slidePointer=null; hud.hidden=true; $('hint').classList.remove('riding');
   riderAngle=0; riderFacing=(level.v||[1])[0]<0?-1:1;
 }
 function startRide(){
@@ -662,7 +791,11 @@ function stopRide(){
 function handleEvents(){
   const ev=sim.st.events; sim.st.events=[];
   for(const e of ev){
-    if(e.type==='star'){ sfx.star(sim.st.stars.filter(Boolean).length-1); burst(level.stars[e.i][0], level.stars[e.i][1], C.marker, 16); }
+    if(e.type==='portal'){
+      const p=level.portals[e.i]; sfx.portal();
+      warp={dir:'in', t:0, x:p.x, y:p.y, i:e.i};
+    }
+    else if(e.type==='star'){ sfx.star(sim.st.stars.filter(Boolean).length-1); burst(level.stars[e.i][0], level.stars[e.i][1], C.marker, 16); }
     else if(e.type==='win'){ sfx.win(); confetti(); mode='done'; setTimeout(showResult, 650); }
     else if(e.type==='crash'){
       sfx.crash(); shake=10; burst(sim.st.x, sim.st.y, C.hazard, 22); mode='done';
@@ -670,17 +803,34 @@ function handleEvents(){
       // the rider and sled part ways
       ragdoll=[{k:'sled',x,y,vx:vx*0.6+r()*80,vy:vy*0.5-120,a:riderAngle,va:r()*12},
                {k:'body',x,y:y-6,vx:vx*0.8+r()*120,vy:vy*0.4-320,a:riderAngle,va:r()*16}];
-      wipeouts++;
-      const hasHint = !!(HINTS[level.id] || level.hint);
-      if(wipeouts>=2 && hasHint && hintBtn.hidden){ hintBtn.hidden=false; toast(e.reason+' Stuck? Tap Hint for a pencil sketch.', 3000); }
-      else toast(e.reason+' Tap Stop to tweak your track.', 2400);
+      if(world){ ragdoll=null; shake=6; }
+      noteWipeout(e.reason, world ? 'Tap Stop, then Ride to try again.' : 'Tap Stop to tweak your track.');
     }
   }
 }
 
+function noteWipeout(reason, next){
+  wipeouts++;
+  const hasHint = !!(HINTS[level.id] || level.hint);
+  if(wipeouts>=2 && hasHint && hintBtn.hidden){ hintBtn.hidden=false; toast(reason+' Stuck? Tap Hint for a pencil sketch.', 3000); }
+  else toast(reason+' '+next, 2400);
+}
+function enterWorld(i){
+  const p=level.portals[i], def=WORLDS[p.world];
+  world=def.make(seedOf(level.id+':'+i), p.stars||0); world.def=def; worldAcc=0;
+  mode='world';
+}
+function leaveWorld(){
+  const i=sim.st.portal, p=level.portals[i];
+  sim.exitPortal(world.starsGot);
+  world=null; mode='run'; acc=0;
+  warp={dir:'out', t:0, x:p.exit[0], y:p.exit[1]};
+  if(cam.z>1.02){ cam.cx=p.exit[0]; cam.cy=p.exit[1]; applyCam(); }
+  sfx.portal();
+}
 function showResult(){
   if(mode!=='done' || !sim || sim.st.status!=='win') return;
-  const got = sim.st.stars.filter(Boolean).length;
+  const got = sim.st.stars.filter(Boolean).length + sim.st.worldStars;
   const used = Math.round(inkUsed(strokes)/inkBudget()*100);
   const time = sim.st.t;
   const titles=['Made it!','Nice line!','So close to perfect!','Clean sweep!'];
@@ -750,6 +900,12 @@ function zoomAt(z, wx, wy, sx, sy){
   applyCam();
 }
 canvas.addEventListener('pointerdown', e=>{
+  if(world && mode==='world'){
+    const r=canvas.getBoundingClientRect(), left=(e.clientX-r.left)/r.width<0.4;
+    if(world.kind==='run' && left){ world.slide(true); slidePointer=e.pointerId; }
+    else world.press();
+    return;
+  }
   pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
   canvas.setPointerCapture(e.pointerId);
   if(pointers.size===2){ cancelStroke(); startGesture(); gestureLock=true; return; }
@@ -785,6 +941,7 @@ canvas.addEventListener('pointermove', e=>{
   updateInk();
 });
 function endDraw(e){
+  if(e.pointerId===slidePointer){ slidePointer=null; if(world) world.slide(false); }
   pointers.delete(e.pointerId);
   if(pointers.size<2) gesture=null;
   if(pointers.size===0) gestureLock=false;   // fingers left over from a pinch never start a line
@@ -846,14 +1003,21 @@ $('shareBtn').onclick=()=>{
 function selectText(el){ const r=document.createRange(); r.selectNodeContents(el); const s=getSelection(); s.removeAllRanges(); s.addRange(r); toast('Select and copy the text below'); }
 window.addEventListener('keydown', e=>{
   if(menu.hidden===false) return;
+  if(world && mode==='world'){
+    if(e.key===' '||e.key==='ArrowUp'||e.key==='w'){ e.preventDefault(); if(!e.repeat) world.press(); return; }
+    if(e.key==='ArrowDown'||e.key==='s'){ e.preventDefault(); world.slide(true); return; }
+  }
   if(e.key===' '||e.key==='Enter'){ if(!resultEl.hidden && e.key==='Enter'){ $('nextBtn').click(); } else { e.preventDefault(); rideBtn.click(); } }
   else if(e.key==='z'&&(e.metaKey||e.ctrlKey)||e.key==='z'||e.key==='u'){ undoBtn.click(); }
   else if(e.key==='e'){ setTool('erase'); } else if(e.key==='p'){ setTool('pen'); }
   else if(e.key==='Escape'){ if(mode!=='edit') stopRide(); else showMenu(); }
 });
 
+window.addEventListener('keyup', e=>{ if(world && (e.key==='ArrowDown'||e.key==='s')) world.slide(false); });
+
 /* ================= Menu ================= */
-function unlocked(i){ return i===0 || !!save.levels[LEVELS[i-1].id]; }
+// a level opens when the one before it is done (or it was already played, so new levels never lock old progress)
+function unlocked(i){ return i===0 || !!save.levels[LEVELS[i-1].id] || !!save.levels[LEVELS[i].id]; }
 function showMenu(){
   if(mode!=='edit') stopRide();
   const grid=$('levelGrid'); grid.innerHTML='';
@@ -906,7 +1070,7 @@ window.addEventListener('resize', resize);
 if(window.visualViewport) visualViewport.addEventListener('resize', resize);
 if(window.ResizeObserver) new ResizeObserver(resize).observe(stage);
 
-function pathPoly(p){ ctx.beginPath(); ctx.moveTo(p[0],p[1]); for(let i=2;i<p.length;i+=2) ctx.lineTo(p[i],p[i+1]); }
+function pathPoly(p){ ctx.beginPath(); ctx.moveTo(p[0],p[1]); for(let i=2;i<p.length;i+=2){ if(p[i]!==p[i]) continue; if(p[i-2]!==p[i-2]) ctx.moveTo(p[i],p[i+1]); else ctx.lineTo(p[i],p[i+1]); } }
 function smoothPoly(p){
   ctx.beginPath(); ctx.moveTo(p[0],p[1]);
   if(p.length<6){ for(let i=2;i<p.length;i+=2) ctx.lineTo(p[i],p[i+1]); return; }
@@ -1011,6 +1175,7 @@ function drawTrail(){
   ctx.save(); ctx.lineCap='round';
   for(let i=from+2;i<n;i+=2){
     ctx.globalAlpha=(i-from)/(n-from)*0.35; ctx.strokeStyle=C.hazard; ctx.lineWidth=3;
+    if(tr[i]!==tr[i] || tr[i-2]!==tr[i-2]) continue;
     ctx.beginPath(); ctx.moveTo(tr[i-2],tr[i-1]); ctx.lineTo(tr[i],tr[i+1]); ctx.stroke();
   }
   ctx.restore();
@@ -1085,6 +1250,174 @@ function drawFx(dt){
   }
   ctx.globalAlpha=1;
 }
+function drawPortal(x,y,r,t,exit){
+  ctx.save(); ctx.translate(x,y);
+  ctx.globalAlpha=exit?0.10:0.16; ctx.fillStyle=C.portal; ctx.beginPath(); ctx.arc(0,0,r*1.05,0,7); ctx.fill();
+  ctx.globalAlpha=1; ctx.strokeStyle=C.portal; ctx.lineCap='round';
+  for(let k=0;k<3;k++){
+    const rr=r*(1-k*0.24);
+    ctx.save(); ctx.rotate((exit?-1:1)*t*(1.6+k*0.7)+k*2);
+    ctx.lineWidth=exit?2.5:4-k*0.8; ctx.setLineDash([rr*0.9, rr*0.55]);
+    ctx.beginPath(); ctx.arc(0,0,rr,0,Math.PI*2); ctx.stroke(); ctx.restore();
+  }
+  ctx.restore();
+}
+function drawPortals(t){
+  for(const [i,p] of (level.portals||[]).entries()){
+    const used = sim && sim.st.used[i];
+    ctx.save(); if(used) ctx.globalAlpha=0.35;
+    drawPortal(p.x,p.y,PORTAL_R,t,false);
+    ctx.restore();
+    drawPortal(p.exit[0],p.exit[1],18,t,true);
+    if(mode==='edit'){
+      ctx.save(); ctx.fillStyle=C.portal; ctx.font=`700 15px ${getComputedStyle(document.body).getPropertyValue('--font-hand')||'cursive'}`;
+      ctx.textAlign='center'; ctx.fillText(WORLDS[p.world].name, p.x, p.y+PORTAL_R+20);
+      ctx.globalAlpha=0.7; ctx.fillText('exit', p.exit[0], p.exit[1]-26); ctx.restore();
+    }
+  }
+}
+function worldView(){
+  // fill the height; on narrow phones show at least 560 units across, letterboxed
+  let ws=view.ch/WH, vis=view.cw/ws, ox=0, oy=0;
+  if(vis<560){ ws=view.cw/560; vis=560; oy=(view.ch-WH*ws)/2; }
+  if(vis>1400){ vis=1400; ox=(view.cw-1400*ws)/2; }
+  return {ws, vis, ox, oy};
+}
+function drawWorld(t,dt){
+  const w=world, dpr=view.dpr, v=worldView();
+  ctx.setTransform(1,0,0,1,0,0); ctx.fillStyle=C.desk; ctx.fillRect(0,0,canvas.width,canvas.height);
+  let sx=0, sy=0; if(shake>0){ sx=(Math.random()-0.5)*shake; sy=(Math.random()-0.5)*shake; shake=Math.max(0,shake-dt*40); }
+  ctx.setTransform(dpr*v.ws,0,0,dpr*v.ws,dpr*(v.ox+sx),dpr*(v.oy+sy));
+  ctx.save(); ctx.beginPath(); ctx.rect(0,0,v.vis,WH); ctx.clip();
+  ctx.fillStyle=C.paper; ctx.fillRect(0,0,v.vis,WH);
+  const lead=Math.min(240, v.vis*0.28), camX=w.x-lead;
+  if(w.kind==='plane') drawPlaneWorld(w,t,camX,v.vis); else drawRunWorld(w,t,camX,v.vis);
+  // exit portal at the end of the course
+  const ey = w.kind==='plane' ? 350 : w.GROUND-60;
+  drawPortal(w.endX+30-camX, ey, 60, t, false);
+  ctx.restore();
+  // title card until the first tap
+  if(w.status==='ready'){
+    ctx.save(); ctx.globalAlpha=0.88; ctx.fillStyle=C.paper; ctx.fillRect(0,0,v.vis,WH); ctx.globalAlpha=1;
+    ctx.textAlign='center'; ctx.fillStyle=C.portal;
+    const hand=getComputedStyle(document.body).getPropertyValue('--font-hand')||'cursive';
+    const disp=getComputedStyle(document.body).getPropertyValue('--font-display')||'sans-serif';
+    ctx.font=`700 64px ${hand}`; ctx.fillText(w.def.name, v.vis/2, WH*0.42);
+    ctx.fillStyle=C.fg; ctx.font=`700 24px ${disp}`;
+    // wrap the how-to sentence(s) to the visible width
+    const lines=[]; for(const sentence of w.def.how.split(/(?<=\.) /)){ let line=''; for(const word of sentence.split(' ')){ const tryL=line?line+' '+word:word; if(ctx.measureText(tryL).width>v.vis-48 && line){ lines.push(line); line=word; } else line=tryL; } lines.push(line); }
+    lines.forEach((l,i)=>ctx.fillText(l, v.vis/2, WH*0.42+50+i*32));
+    const below=WH*0.42+50+lines.length*32;
+    ctx.fillStyle=C.muted; ctx.font=`800 20px ${disp}`; ctx.fillText(w.stars.length?'Grab the star, reach the portal':'Reach the portal', v.vis/2, below+12);
+    ctx.globalAlpha=0.6+0.4*Math.sin(t*5); ctx.fillStyle=C.ink; ctx.font=`800 26px ${disp}`; ctx.fillText('Tap to start', v.vis/2, below+66);
+    ctx.restore();
+  }
+  if(w.kind==='run' && w.status==='play' && w.t<4){
+    // show the two touch zones for the first few seconds
+    ctx.save(); ctx.globalAlpha=Math.min(1,(4-w.t))*0.8;
+    ctx.strokeStyle=C.muted; ctx.setLineDash([8,10]); ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(v.vis*0.4,40); ctx.lineTo(v.vis*0.4,WH-40); ctx.stroke();
+    ctx.fillStyle=C.fg; ctx.textAlign='center'; ctx.font=`800 22px ${getComputedStyle(document.body).getPropertyValue('--font-display')||'sans-serif'}`;
+    ctx.fillText('hold: slide', v.vis*0.2, 70); ctx.fillText('tap: jump', v.vis*0.7, 70);
+    ctx.restore();
+  }
+}
+function pencil(x, tipY, dir, PW){
+  // a yellow pencil whose sharpened tip points into the gap at tipY; dir=1 points down, -1 up
+  const len=900, tipL=46, bodyEnd=tipY-dir*tipL;
+  ctx.save();
+  ctx.fillStyle=C.marker; ctx.strokeStyle=C.fg; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.rect(x-PW/2, Math.min(bodyEnd, bodyEnd-dir*len), PW, len); ctx.fill(); ctx.stroke();
+  ctx.globalAlpha=0.35; ctx.beginPath(); ctx.moveTo(x-PW/6, bodyEnd); ctx.lineTo(x-PW/6, bodyEnd-dir*len); ctx.moveTo(x+PW/6, bodyEnd); ctx.lineTo(x+PW/6, bodyEnd-dir*len); ctx.stroke(); ctx.globalAlpha=1;
+  ctx.fillStyle=C.wood; ctx.beginPath(); ctx.moveTo(x-PW/2, bodyEnd); ctx.lineTo(x+PW/2, bodyEnd); ctx.lineTo(x, tipY); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle=C.fg; ctx.beginPath(); ctx.moveTo(x-PW*0.15, tipY-dir*tipL*0.3); ctx.lineTo(x+PW*0.15, tipY-dir*tipL*0.3); ctx.lineTo(x, tipY); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function drawPlaneWorld(w,t,camX,vis){
+  // drifting pencil-sketch clouds
+  ctx.save(); ctx.strokeStyle=C['grid-major']; ctx.lineWidth=3; ctx.fillStyle=C.paper;
+  for(let k=Math.floor(camX*0.4/420)-1; k<Math.floor((camX*0.4+vis)/420)+2; k++){
+    const cx=k*420-camX*0.4+((k*137)%200), cy=110+((k*97)%360+360)%360;
+    ctx.beginPath(); ctx.arc(cx,cy,30,Math.PI*0.9,Math.PI*1.9); ctx.arc(cx+38,cy-12,36,Math.PI*1.1,Math.PI*1.95); ctx.arc(cx+80,cy,28,Math.PI*1.2,Math.PI*0.1); ctx.lineTo(cx-30,cy+8); ctx.stroke();
+  }
+  ctx.restore();
+  for(const p of w.pipes){
+    const x=p.x-camX; if(x<-100||x>vis+100) continue;
+    pencil(x, p.gy-w.GAP/2, 1, w.PW); pencil(x, p.gy+w.GAP/2, -1, w.PW);
+  }
+  for(const s of w.stars){ if(s.got) continue; starPath(s.x-camX, s.y+Math.sin(t*3)*3, 18); ctx.fillStyle=C.marker; ctx.fill(); ctx.lineWidth=2.5; ctx.strokeStyle=C.fg; ctx.stroke(); }
+  // the paper plane, rider on board
+  const px=w.x-camX, tilt=w.status==='fail' ? 1.2 : Math.max(-0.5,Math.min(0.8,w.vy/900));
+  ctx.save(); ctx.translate(px,w.y); ctx.rotate(tilt); ctx.scale(1.6,1.6);
+  ctx.save(); ctx.translate(-4,-6); ctx.scale(0.8,0.8); bodyShape(t); ctx.restore();
+  ctx.lineJoin='round'; ctx.fillStyle=C.paper; ctx.strokeStyle=C.fg; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(26,0); ctx.lineTo(-22,-11); ctx.lineTo(-10,1); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(26,0); ctx.lineTo(-10,1); ctx.lineTo(-20,10); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.restore();
+}
+function blob(x,y,w,h,seed){
+  ctx.beginPath();
+  for(let i=0;i<=12;i++){ const a=i/12*Math.PI*2, wob=0.82+0.18*Math.sin(seed*40+i*2.3);
+    const px=x+w/2+Math.cos(a)*w/2*wob, py=y-h/2+Math.sin(a)*h/2*wob; i?ctx.lineTo(px,py):ctx.moveTo(px,py); }
+  ctx.closePath();
+}
+function drawRunWorld(w,t,camX,vis){
+  // notebook paper: ruled lines and a red margin
+  ctx.save(); ctx.strokeStyle=C.grid; ctx.lineWidth=2;
+  for(let y=40;y<WH;y+=36){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(vis,y); ctx.stroke(); }
+  const mx=((80-camX)%900+900)%900; ctx.strokeStyle=C.hazard; ctx.globalAlpha=0.5; ctx.beginPath(); ctx.moveTo(mx,0); ctx.lineTo(mx,WH); ctx.stroke();
+  ctx.restore();
+  const G=w.GROUND;
+  ctx.strokeStyle=C.pencil; ctx.lineWidth=6; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(0,G+2); ctx.lineTo(vis,G+2); ctx.stroke();
+  for(const o of w.obs){
+    const x=o.x-camX; if(x<-160||x>vis+160) continue;
+    if(o.kind==='blot'){ blob(x,G,o.w,o.h*2,o.seed); ctx.fillStyle=C.ink; ctx.fill(); }
+    else if(o.kind==='block'){
+      ctx.fillStyle=C.eraser; ctx.strokeStyle=C.fg; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x,G-o.h,o.w,o.h,8) : ctx.rect(x,G-o.h,o.w,o.h); ctx.fill(); ctx.stroke();
+      ctx.fillStyle=C.ink; ctx.globalAlpha=0.55; ctx.fillRect(x+2,G-o.h*0.45,o.w-4,o.h*0.45-2); ctx.globalAlpha=1;
+    } else {
+      ctx.fillStyle=C.wood; ctx.strokeStyle=C.fg; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.rect(x+30,-10,60,o.h+10); ctx.fill(); ctx.stroke();
+      ctx.lineWidth=2; for(let y=o.h-12;y>0;y-=20){ ctx.beginPath(); ctx.moveTo(x+30,y); ctx.lineTo(x+(y%100<20?52:42),y); ctx.stroke(); }
+    }
+  }
+  for(const s of w.stars){ if(s.got) continue; starPath(s.x-camX, s.y+Math.sin(t*3)*3, 18); ctx.fillStyle=C.marker; ctx.fill(); ctx.lineWidth=2.5; ctx.strokeStyle=C.fg; ctx.stroke(); }
+  // the runner (off the sled now)
+  const px=w.x-camX, y=w.y;
+  ctx.save(); ctx.translate(px,y); ctx.scale(1.9,1.9);
+  ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle=C.fg; ctx.lineWidth=2.4;
+  if(w.status==='fail'){ ctx.rotate(-1.3); }
+  if(w.sliding){
+    ctx.beginPath(); ctx.moveTo(-10,-4); ctx.lineTo(8,-3); ctx.moveTo(8,-3); ctx.lineTo(16,-1); ctx.moveTo(-2,-4); ctx.lineTo(6,-9); ctx.stroke();
+    ctx.strokeStyle=C.hazard; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(-10,-6); ctx.quadraticCurveTo(-18,-12,-24,-8); ctx.stroke();
+    ctx.strokeStyle=C.fg; ctx.lineWidth=2.4; ctx.fillStyle=C.paper; ctx.beginPath(); ctx.arc(-14,-6,4.6,0,7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle=C.ink; ctx.beginPath(); ctx.arc(-15,-7,4.8,Math.PI*0.6,Math.PI*1.6); ctx.fill();
+  } else {
+    const ph = w.ground && w.status==='play' ? t*16 : 0.6, a=Math.sin(ph)*0.7, b=Math.sin(ph+Math.PI)*0.7;
+    ctx.beginPath();
+    ctx.moveTo(0,-12); ctx.lineTo(Math.sin(a)*9, -12+Math.cos(a)*6); ctx.lineTo(Math.sin(a)*9-3, 0);
+    ctx.moveTo(0,-12); ctx.lineTo(Math.sin(b)*9, -12+Math.cos(b)*6); ctx.lineTo(Math.sin(b)*9-3, 0);
+    ctx.moveTo(0,-12); ctx.lineTo(2,-24); ctx.moveTo(1,-20); ctx.lineTo(8+a*3,-15); ctx.moveTo(1,-20); ctx.lineTo(-6+b*3,-15);
+    ctx.stroke();
+    const fl=Math.sin(t*22)*2;
+    ctx.strokeStyle=C.hazard; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(1,-24); ctx.quadraticCurveTo(-8,-25+fl,-15,-22-fl); ctx.stroke();
+    ctx.strokeStyle=C.fg; ctx.lineWidth=2.4; ctx.fillStyle=C.paper; ctx.beginPath(); ctx.arc(3,-29,4.6,0,7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle=C.ink; ctx.beginPath(); ctx.arc(3,-30.5,4.8,Math.PI,0); ctx.fill();
+  }
+  ctx.restore();
+}
+function drawWarp(dt){
+  // ink-purple circle that swallows the page on the way in, and opens up on the way out
+  warp.t+=dt;
+  const dpr=view.dpr, k=Math.min(1,warp.t/0.5), e=k*k*(3-2*k);
+  const sx=view.ox+warp.x*view.s, sy=view.oy+warp.y*view.s, maxR=Math.hypot(view.cw,view.ch);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle=C.portal;
+  if(warp.dir==='in'){ ctx.beginPath(); ctx.arc(sx,sy,e*maxR,0,7); ctx.fill(); }
+  else { ctx.beginPath(); ctx.rect(0,0,view.cw,view.ch); ctx.arc(sx,sy,e*maxR,0,7,true); ctx.fill('evenodd'); }
+  if(k>=1){ const d=warp; warp=null; if(d.dir==='in') enterWorld(d.i); }
+}
 function drawStartMarker(){
   const [x,y]=level.start;
   ctx.save(); ctx.globalAlpha=0.5; ctx.fillStyle=C.muted; ctx.font=`700 16px ${getComputedStyle(document.body).getPropertyValue('--font-hand')||'cursive'}`;
@@ -1121,6 +1454,18 @@ function frame(now){
   const dt=Math.min(0.05,(now-(lastT||now))/1000); lastT=now;
   const t=now/1000;
   if(!menu.hidden){ drawHero(t,dt); requestAnimationFrame(frame); return; }
+  if(world){
+    if(mode==='world'){
+      worldAcc+=dt;
+      while(worldAcc>=1/120 && (world.status==='play'||world.status==='ready')){ world.update(1/120); worldAcc-=1/120; }
+      if(world.status==='win') leaveWorld();
+      else if(world.status==='fail'){ mode='done'; sim.failPortal(world.reason); handleEvents(); }
+    }
+    if(world){
+      if(!hud.hidden){ $('hudStars').textContent=`★ ${sim.st.stars.filter(Boolean).length+sim.st.worldStars+world.starsGot}/${totalStars(level)}`; }
+      drawWorld(t,dt); requestAnimationFrame(frame); return;
+    }
+  }
   if(mode==='run' && sim){
     // a beat of slow motion as the rider reaches the flag
     const near = !reduceMotion && Math.hypot(sim.st.x-level.goal[0], sim.st.y-level.goal[1]) < 120;
@@ -1144,7 +1489,7 @@ function frame(now){
   } else if(mode==='done' && sim && sim.st.status==='crash'){ crashT+=dt; }
   updateRiderPose(dt);
   if(sim && !hud.hidden){
-    const got=sim.st.stars.filter(Boolean).length, txt=`★ ${got}/${level.stars.length}`;
+    const got=sim.st.stars.filter(Boolean).length+sim.st.worldStars+(world?world.starsGot:0), txt=`★ ${got}/${totalStars(level)}`;
     if($('hudStars').textContent!==txt) $('hudStars').textContent=txt;
     $('hudTime').textContent=sim.st.t.toFixed(1)+'s';
   }
@@ -1176,13 +1521,14 @@ function frame(now){
   ctx.drawImage(layer, sx*dpr, sy*dpr);
   ctx.setTransform(dpr*view.s,0,0,dpr*view.s,dpr*(view.ox+sx),dpr*(view.oy+sy));
   ctx.save(); ctx.beginPath(); ctx.rect(0,0,W,H); ctx.clip();
-  drawChevrons(); drawGoal(t); drawStars(t);
+  drawChevrons(); drawPortals(t); drawGoal(t); drawStars(t);
   drawTrail();
   if(ragdoll) drawRagdoll(dt,t);
   else if(sim) drawRider(sim.st.x, sim.st.y, t);
   else drawRider(level.start[0], level.start[1], t);
   drawFx(dt);
   ctx.restore();
+  if(warp) drawWarp(dt);
   requestAnimationFrame(frame);
 }
 
