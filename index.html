@@ -707,8 +707,9 @@ function makeRunWorld(seed, nStars){
   function fail(r){ w.status='fail'; w.reason=r; sfx.crash(); }
   return w;
 }
-// Bits & Pieces: you arrive in pieces. Roll as a ball, hop on one leg, wobble on two, then run whole again.
-// One control the whole way: hold to go, let go to ease off. Each form handles that differently.
+// Bits & Pieces: you arrive in pieces and put yourself back together, Human: Fall Flat style.
+// Your body is a ragdoll (points joined by sticks, Verlet physics) with weak "muscles" that try to hold a pose;
+// hold to go and let go to ease off. Falling over isn't failure: you flop, then clumsily get back up.
 function makePiecesWorld(seed, nStars){
   const rng=mulberry(seed), GRAV=1500, BASE=520, STEP=10;
   const secs=[['ball',1800],['pogo',1600],['walk',1100],['arms',450],['whole',350]];
@@ -734,28 +735,50 @@ function makePiecesWorld(seed, nStars){
   const whole0=starts[3]; setH(whole0,total+400,()=>BASE);
   const ground=x=>{ const i=Math.floor(x/STEP), f=x/STEP-i; if(i<0) return BASE; if(i+1>=hs.length) return BASE; const a=hs[i], b=hs[i+1]; return a+(b-a)*f; };
   const slope=x=>{ const a=ground(x-4), b=ground(x+4); return a===a && b===b ? (b-a)/8 : 0; };   // gaps have no ground, so no slope
-  const pickups=[{x:starts[1]-60, part:'leg', to:'pogo', msg:'A leg! Hold to lean and go faster, even mid-hop. Straighten up before you land.'},
-                 {x:starts[2]-60, part:'leg', to:'walk', msg:'Two legs, no arms. Hold to walk. Too fast and that big head topples you.'},
-                 {x:starts[3]-60, part:'arms', to:'arms', msg:'Arms! Now you can keep your balance. Run!'},
+  const pickups=[{x:starts[1]-60, part:'leg', to:'pogo', msg:'A leg! Hold to lean into your hops. Let go to straighten up.'},
+                 {x:starts[2]-60, part:'leg', to:'walk', msg:'Two legs, no arms, heavy head. Hold to walk. Too fast and over you go.'},
+                 {x:starts[3]-60, part:'arms', to:'arms', msg:'Arms! Much better balance. Run!'},
                  {x:starts[4]-60, part:'scarf', to:'whole', msg:'Your scarf! All in one piece. Through the portal!'}];
-  // pogo physics, shared with the autopilot: lean sets your speed (in the air too), and only the landing can tip you
-  function pogoStep(s, hold, dt){
-    s.lean=Math.max(0, Math.min(1.6, s.lean+(hold?1.4:-1.8)*dt));
-    s.vx += (Math.min(1.25,s.lean)*380 - s.vx)*Math.min(1,6*dt);
-    s.vy+=GRAV*dt; s.x+=s.vx*dt; s.y+=s.vy*dt;
-    const gn=ground(s.x);
-    if(s.vy>0 && s.y>=gn){
-      s.y=gn;
-      if(s.lean>1.15) return 'tip';
-      if(spikes.some(k=>s.x>k[0]-4 && s.x<k[1]+4)) return 'spike';
-      s.vy=-660; return 'bounce';
-    }
-    return null;
-  }
   const stars=[];
-  if(nStars>0){ const s=spikes[Math.min(spikes.length-1,1)]; stars.push({x:(s[0]+s[1])/2, y:BASE-170, got:false}); }
+  if(nStars>0){ const s=spikes[Math.min(spikes.length-1,1)]; stars.push({x:(s[0]+s[1])/2, y:BASE-150, got:false}); }
+  const H1=1/120;
+  let P={}, sticks=[];
+  const pt=(x,y,inv,r)=>({x,y,px:x,py:y,inv,r,ground:false});
+  function build(form, x, vx=0, vy=0){
+    const gy=ground(x)===ground(x)?ground(x):BASE;
+    P={}; sticks=[];
+    const add=(n,dx,dy,inv,r)=>{ const q=pt(x+dx,gy+dy,inv,r); q.px-=vx*H1; q.py-=vy*H1; P[n]=q; };
+    const stick=(a,b,k=1)=>sticks.push({a:P[a],b:P[b],len:Math.hypot(P[a].x-P[b].x,P[a].y-P[b].y),k});
+    if(form==='ball'){ add('H',0,-16,1,15); }
+    else if(form==='pogo'){
+      add('F',0,-4,1,3); add('P',0,-42,1,4); add('N',0,-66,1,4); add('H',0,-77,0.35,9);
+      stick('P','N'); stick('N','H'); stick('F','P',0.3); stick('F','N',0.3);
+    } else {
+      add('F1',-5,-3,1,3); add('F2',5,-3,1,3); add('K1',-3,-20,1,3); add('K2',3,-20,1,3); add('P',0,-37,1,4); add('N',0,-63,1,4);
+      add('H',0,-75, form==='walk'?0.28:0.5, 9);
+      stick('F1','K1'); stick('K1','P'); stick('F2','K2'); stick('K2','P'); stick('P','N'); stick('N','H');
+      if(form!=='walk'){ add('E1',-3,-51,1,2); add('A1',-4,-40,1,3); add('E2',3,-51,1,2); add('A2',4,-40,1,3);
+        stick('N','E1'); stick('E1','A1'); stick('N','E2'); stick('E2','A2'); }
+      if(form==='whole'){ for(let k=0;k<5;k++) add('S'+k,-4-k*6,-63,2,1); stick('N','S0',0.9); for(let k=1;k<5;k++) stick('S'+(k-1),'S'+k,0.9); }
+    }
+    w.form=form; w.parts=P; w.sticks=sticks; w.down=0; w.getup=0; w.gait=null; w.leanCmd=0;
+  }
+  // rotate segment a->b toward a world angle (0 = pointing down, +ve = toward +x), split by inverse mass
+  function aim(a,b,target,k){
+    const dx=b.x-a.x, dy=b.y-a.y, L=Math.hypot(dx,dy)||1, cur=Math.atan2(dx,dy);
+    let e=target-cur; while(e>Math.PI) e-=2*Math.PI; while(e<-Math.PI) e+=2*Math.PI;
+    const ang=cur+e*k, mx=a.x+Math.sin(ang)*L-b.x, my=a.y+Math.cos(ang)*L-b.y, s=(a.inv+b.inv)||1;
+    b.x+=mx*b.inv/s; b.y+=my*b.inv/s; a.x-=mx*a.inv/s; a.y-=my*a.inv/s;
+  }
+  // pull a point part of the way toward a target, never more than max units in one step
+  const nudge=(q,tx,ty,k,max)=>{ let dx=(tx-q.x)*k, dy=(ty-q.y)*k; const d=Math.hypot(dx,dy); if(d>max){ dx*=max/d; dy*=max/d; } q.x+=dx; q.y+=dy; };
+  const upTilt=(a,b)=>Math.atan2(b.x-a.x, a.y-b.y);   // how far a->b leans forward from straight up
+  const vel=q=>[(q.x-q.px)/H1,(q.y-q.py)/H1];
+  const setVel=(q,vx,vy)=>{ q.px=q.x-vx*H1; q.py=q.y-vy*H1; };
+  let checkpoint=b0+120, phase=0, wasFoot=false;
+  function respawn(msg){ build(w.form, checkpoint+20); w.msg=msg; w.msgT=2; w.respawns++; if(!w.quiet) sfx.crash(); }
   const w={kind:'pieces', x:b0+120, y:BASE-16, vx:0, vy:0, t:0, status:'intro', reason:'', starsGot:0, stars, spikes, pickups,
-    form:'ball', ground:true, holding:false, lean:0, wob:0, spin:0, endX:total+120, GROUND:BASE, groundAt:ground, msg:'', msgT:0, parts:[], pogoStep,
+    form:'ball', holding:false, tilt:0, speed:0, down:0, getup:0, flops:0, respawns:0, quiet:false, spin:0, endX:total+120, GROUND:BASE, groundAt:ground, msg:'', msgT:0, parts:{}, sticks:[],
     press(){ if(w.status==='ready') w.status='play'; w.holding=true; },
     release(){ w.holding=false; },
     slide(on){ if(on) w.press(); else w.release(); },
@@ -763,49 +786,111 @@ function makePiecesWorld(seed, nStars){
       w.t+=dt; if(w.msgT>0) w.msgT-=dt;
       if(w.status==='intro'){ if(w.t>1.4) w.status='ready'; return; }
       if(w.status!=='play') return;
-      const g=ground(w.x);
-      if(w.form==='ball'){
-        const r=16;
-        if(w.ground){
-          const s=slope(w.x), acc=(w.holding?560:0) - GRAV*s/Math.sqrt(1+s*s)*0.9 - 0.25*w.vx;
-          w.vx=Math.max(0,Math.min(640, w.vx+acc*dt));
-          const nx=w.x+w.vx*dt, gn=ground(nx), vyNow=w.vx*s;
-          if(gn!==gn || gn-r > w.y+vyNow*dt+GRAV*dt*dt+1.5){ w.ground=false; w.vy=vyNow; w.x=nx; w.y+=vyNow*dt; }
-          else { w.x=nx; w.y=gn-r; w.vy=vyNow; }
-        } else {
-          w.vy+=GRAV*dt; w.x+=w.vx*dt; w.y+=w.vy*dt;
-          const gn=ground(w.x); if(gn===gn && w.y>=gn-r && w.vy>0){ w.y=gn-r; w.ground=true; }
+      const f=w.form, hold=w.holding && w.getup<=0;
+      // integrate
+      const vcap=1100*dt;   // nothing moves faster than this, so the ragdoll can't blow up
+      for(const k in P){ const q=P[k], drag=k[0]==='S'?0.96:0.999, vx=Math.max(-vcap,Math.min(vcap,(q.x-q.px)*drag)), vy=Math.max(-vcap,Math.min(vcap,(q.y-q.py)*drag)); q.px=q.x; q.py=q.y; q.x+=vx; q.y+=vy+GRAV*dt*dt; }
+      // muscles and controls
+      if(f==='ball'){
+        const H=P.H, [vx]=vel(H);
+        if(hold && vx<640) H.x+=(H.ground?900:250)*dt*dt;
+      } else if(f==='pogo'){
+        // your lean eases toward where you're asking for it, so tapping doesn't jerk the body around
+        const want = w.getup>0 ? 0 : hold ? 0.55 : 0;   // hold longer, lean further, hop further
+        w.leanCmd = (w.leanCmd||0) + Math.max(-1.6*dt, Math.min(1.6*dt, want-(w.leanCmd||0)));
+        const lean=w.leanCmd, k = w.getup>0 ? 0.25 : 0.12;
+        aim(P.P,P.N,Math.PI-lean,k); aim(P.N,P.H,Math.PI-lean,k*1.6); aim(P.P,P.F,-lean,0.35);
+        // landing on the foot: the spring pushes you off along the way you're leaning
+        if(P.F.ground && !wasFoot && w.getup<=0){
+          // push off along the leg, but never at more than 0.5 rad from vertical, so a wobble can't fling you
+          const ang=Math.max(-0.55,Math.min(0.55,Math.atan2(P.P.x-P.F.x, P.F.y-P.P.y)));
+          for(const q of [P.F,P.P,P.N,P.H]){ const [vx]=vel(q); setVel(q, vx*0.5+Math.sin(ang)*480, -Math.cos(ang)*660); }
+          if(!w.quiet) sfx.jump();
         }
-        w.spin+=w.vx*dt/r;
-      } else if(w.form==='pogo'){
-        const r=pogoStep(w, w.holding, dt);
-        if(r==='tip') return fail('Landed leaning too far and tipped over.');
-        if(r==='spike') return fail('Pogoed onto spikes.');
-        if(r==='bounce') sfx.jump();
-      } else if(w.form==='walk'){
-        const s=slope(w.x);
-        w.vx += ((w.holding?260:-320) + s*GRAV*0.3)*dt; w.vx=Math.max(0,Math.min(320,w.vx));
-        w.x+=w.vx*dt; w.y=ground(w.x);
-        w.wob += (w.vx>150 ? (w.vx-150)/55 : -0.7)*dt; if(w.wob<0) w.wob=0;
-        if(w.wob>1) return fail('Too fast! Your heavy head toppled you over.');
+        wasFoot=P.F.ground;
       } else {
-        w.vx += (w.holding?700:-200)*dt; w.vx=Math.max(120,Math.min(460,w.vx));
-        w.x+=w.vx*dt; w.y=ground(w.x);
+        const legs = f==='walk' ? {amp:0.45,torso:0.06,vmax:240,acc:90} : f==='arms' ? {amp:0.55,torso:0.2,vmax:280,acc:300} : {amp:0.6,torso:0.26,vmax:380,acc:500};
+        // walking: holding winds your target speed up, letting go winds it down
+        w.vt = w.getup>0 ? 0 : hold ? Math.min(legs.vmax,(w.vt||40)+legs.acc*dt) : Math.max(0,(w.vt||0)-400*dt);
+        const [pvx]=vel(P.P); w.speed=pvx;
+        // without arms, balance gets weaker the faster you go; that big head does the rest
+        let torsoK = w.getup>0 ? 0.32 : f==='walk' ? legs.torso*Math.max(0.15,1-pvx/170)+0.02 : legs.torso;
+        const lean = 0.02+Math.min(0.14,(w.vt||0)/1500);
+        aim(P.P,P.N,Math.PI-lean,torsoK); aim(P.N,P.H,Math.PI-lean,torsoK*1.4);
+        // stepping: the swing foot arcs to a spot ahead of the hips while the planted foot grips
+        const G = w.gait || (w.gait={sw:'F1', st:'F2', ph:0, fromX:P.F1.x, toX:P.F1.x});
+        const S = Math.max(12, Math.min(44, (w.vt||0)*0.24));
+        // once you've toppled past ~50 degrees you go limp until you get back up
+        const collapsed = P.P.y > (P.F1.y+P.F2.y)/2-14;
+        const limp = w.getup<=0 && (Math.abs(upTilt(P.P,P.N))>0.6 || collapsed);
+        if(limp) w.vt=0;
+        if((w.vt||0)>8 && w.getup<=0 && !limp){
+          G.ph += dt*Math.max(1.8, (w.vt||0)/S*0.55);
+          if(G.ph>=1){ G.ph=0; const t=G.sw; G.sw=G.st; G.st=t; G.fromX=P[G.sw].x; G.toX=P.P.x+S; }
+          const sw=P[G.sw], k=G.ph, tx=G.fromX+(G.toX-G.fromX)*k, gy=ground(tx)===ground(tx)?ground(tx):BASE, ty=gy-3-11*Math.sin(Math.PI*k);
+          nudge(sw, tx, ty, 0.35, 5);
+          phase+=dt*6;
+        }
+        const st=P[G.st]; if(st.ground && !limp){ st.px+=(st.x-st.px)*0.9; }
+        // legs: hips sprung up over the feet, knees bent a little forward
+        if(!limp){
+          const gy=ground(P.P.x)===ground(P.P.x)?ground(P.P.x):BASE;
+          nudge(P.P, P.P.x, gy-34, w.getup>0?0.25:0.16, 3);
+          for(const [K,F] of [[P.K1,P.F1],[P.K2,P.F2]]) nudge(K, (P.P.x+F.x)/2+5, (P.P.y+F.y)/2, 0.3, 3);
+        }
+        if(P.E1){ const sw=Math.sin(phase); aim(P.N,P.E1,-sw*0.7,0.07); aim(P.E1,P.A1,-sw*0.7+0.5,0.07); aim(P.N,P.E2,sw*0.7,0.07); aim(P.E2,P.A2,sw*0.7+0.5,0.07); }
+        // the hips are carried toward your walking speed while a foot is down
+        if(!limp && (P.F1.ground||P.F2.ground)){ const [vx,vy]=vel(P.P); setVel(P.P, vx+((w.vt||0)-vx)*Math.min(1,5*dt), vy); }
       }
-      if(w.y>WH+60) return fail('Rolled into a gap.');
+      // sticks and ground, a few passes
+      for(let it=0; it<6; it++){
+        for(const s of sticks){ const dx=s.b.x-s.a.x, dy=s.b.y-s.a.y, d=Math.hypot(dx,dy)||1, diff=(d-s.len)/d*s.k, sum=s.a.inv+s.b.inv;
+          s.a.x+=dx*diff*s.a.inv/sum; s.a.y+=dy*diff*s.a.inv/sum; s.b.x-=dx*diff*s.b.inv/sum; s.b.y-=dy*diff*s.b.inv/sum; }
+        for(const k in P){ const q=P[k], g=ground(q.x); if(it===0) q.ground=false;
+          if(g===g && q.y+q.r>g){ q.y=g-q.r; q.ground=true; } }
+      }
+      // friction once per step: feet grip, bodies scrape, the head rolls
+      for(const k in P){ const q=P[k]; if(!q.ground) continue;
+        const fr = k==='H'&&f==='ball' ? 0.004 : (k[0]==='F') ? 0.35 : 0.12; q.px+=(q.x-q.px)*fr; if(q.py>q.y) q.py=q.y; }
+      // where are we, and did we fall over?
+      const core = f==='ball' ? P.H : P.P;
+      w.x=core.x; w.y=core.y; w.vx=vel(core)[0];
+      if(f==='ball') w.spin+=(P.H.x-P.H.px)/15;
+      else {
+        w.tilt=upTilt(P.P,P.N);
+        const headDown=P.H.ground || (P.N.ground);
+        if(w.getup>0){ w.getup-=dt; if(w.getup<=0) w.down=0; }
+        else if(Math.abs(w.tilt)>1.0 || headDown || (P.F1 && P.P.y>(P.F1.y+P.F2.y)/2-14)){ w.down+=dt; if(w.down>0.5){ w.getup=1.0; w.flops++; w.msg=['Oof!','Whoops!','Ow, my head!','Back up we go...'][w.flops%4]; w.msgT=1.2; } }
+        else w.down=0;
+      }
+      // spikes and gaps send you back to the last piece you picked up
+      for(const k in P){ const q=P[k];
+        if(q.y>WH+40) return respawn('Into the gap! Back to your last piece.');
+        if(q.ground && k[0]!=='S' && spikes.some(s=>q.x>s[0]-2 && q.x<s[1]+2)) return respawn('Ouch, spikes! Back to your last piece.');
+      }
       for(const p of pickups){
         if(!p.got && w.x>=p.x){
-          p.got=true; w.form=p.to; w.msg=p.msg; w.msgT=3.2; sfx.star(1);
-          if(p.to==='pogo'){ w.y=ground(w.x); w.vy=-500; w.vx=120; w.lean=0.3; }
-          if(p.to==='walk'){ w.y=ground(w.x); w.vx=Math.min(w.vx,120); w.wob=0; }
-          if(p.to==='arms'||p.to==='whole'){ w.y=ground(w.x); w.vx=Math.max(w.vx,200); }
+          p.got=true; checkpoint=p.x; w.msg=p.msg; w.msgT=3.2; sfx.star(1);
+          build(p.to, w.x, Math.max(80,Math.min(260,w.vx)), 0);
         }
       }
-      for(const s of stars){ if(s.got) continue; const top = w.form==='pogo' ? w.y-64 : w.y-40;
-        if(Math.abs(w.x-s.x)<26 && s.y>top-20 && s.y<w.y+20){ s.got=true; w.starsGot++; sfx.star(w.starsGot); } }
+      for(const s of stars){ if(s.got) continue;
+        for(const k in P){ const q=P[k]; if((q.x-s.x)**2+(q.y-s.y)**2<30*30){ s.got=true; w.starsGot++; sfx.star(w.starsGot); break; } } }
       if(w.x>=w.endX) w.status='win';
     }};
-  function fail(r){ w.status='fail'; w.reason=r; sfx.crash(); }
+  // save and restore the whole ragdoll, so the autopilot can try out moves with the real physics
+  w.snapshot=()=>({pts:Object.fromEntries(Object.entries(P).map(([k,q])=>[k,{...q}])), form:w.form, wasFoot, phase, checkpoint,
+    f:['x','y','vx','t','leanCmd','vt','down','getup','tilt','speed','respawns','starsGot','status','msg','msgT','flops','spin'].map(k=>w[k]),
+    got:pickups.map(p=>p.got), sgot:stars.map(s=>s.got)});
+  w.restore=s=>{
+    if(w.form!==s.form) build(s.form, s.f[0]);
+    for(const k in s.pts) Object.assign(P[k], s.pts[k]);
+    wasFoot=s.wasFoot; phase=s.phase; checkpoint=s.checkpoint;
+    ['x','y','vx','t','leanCmd','vt','down','getup','tilt','speed','respawns','starsGot','status','msg','msgT','flops','spin'].forEach((k,i)=>w[k]=s.f[i]);
+    pickups.forEach((p,i)=>p.got=s.got[i]); stars.forEach((q,i)=>q.got=s.sgot[i]);
+  };
+  w.footDown=()=>!!(P.F&&P.F.ground);
+  build('ball', b0+120);
   return w;
 }
 
@@ -819,25 +904,30 @@ function autopilot(w){
     if(w.y>target+42 && w.vy>-40) w.press();
   } else if(w.kind==='pieces'){
     if(w.status!=='play') return;
-    if(w.form==='ball' || w.form==='arms' || w.form==='whole'){ w.holding=true; return; }
-    if(w.form==='walk'){ w.holding = w.vx<138; return; }
-    // pogo: every 0.05s, try "hold for a while then let go" and the reverse at many switch points, play each
-    // to the landing, and follow the plan that lands clear of the spikes with a comfortable lean
-    const bad=x=>w.spikes.some(s=>x>s[0]-16 && x<s[1]+16);
-    w._k=(w._k||0)+1;
-    if(w._k%6===1 || !w._plan){
-      let best=null;
-      for(const first of [true,false]) for(let tau=0; tau<=0.9; tau+=0.05){
-        const s={x:w.x,y:w.y,vx:w.vx,vy:w.vy,lean:w.lean}; let tt=0, r=null;
-        for(let k=0;k<240 && !r;k++){ r=w.pogoStep(s, tt<tau?first:!first, 1/120); tt+=1/120; }
-        if(r!=='bounce' || bad(s.x)) continue;
-        const score = s.x - Math.abs(s.lean-0.6)*120;
-        if(!best || score>best.score) best={score, first, tau, t0:w.t};
+    if(w.form==='pogo'){
+      // at each takeoff, try "hold for tau, then let go" for a range of tau using the real physics
+      // (save, simulate the next two landings, restore) and follow the one that gets furthest safely
+      const foot=w.footDown();
+      if(!foot && (w._wasFoot || !w._plan)){
+        const snap=w.snapshot(); w.quiet=true;
+        let best=null;
+        for(let tau=0; tau<=0.9001; tau+=0.05){
+          w.restore(snap); let lands=0, prev=w.footDown(), t0=w.t;
+          for(let k=0;k<300 && lands<2 && w.form==='pogo' && w.respawns===snap.f[10];k++){
+            w.holding=(w.t-t0)<tau; w.update(1/120); const f2=w.footDown(); if(f2&&!prev) lands++; prev=f2;
+          }
+          if(w.respawns!==snap.f[10]) continue;
+          const score=w.x+(w.starsGot-snap.f[11])*500;   // grabbing the star is worth a detour
+          if(!best || score>best.x) best={tau, x:score};
+        }
+        w.restore(snap); w.quiet=false;
+        w._plan={tau:best?best.tau:0, t0:w.t};
       }
-      w._plan=best;
+      w._wasFoot=foot;
+      w.holding = w.getup<=0 && (w.t-w._plan.t0) < w._plan.tau;
     }
-    const p=w._plan;
-    w.holding = p ? ((w.t-p.t0)<p.tau ? p.first : !p.first) : w.lean<0.6;
+    else if(w.form==='walk') w.holding = w.tilt<0.2 && w.speed<140;
+    else w.holding=true;
   } else {
     const b=w.box(), next=w.obs.find(o=>o.x+o.w>b.l);
     if(!next){ w.slide(false); return; }
@@ -1587,12 +1677,21 @@ function drawWorld(t,dt){
   ctx.setTransform(dpr*v.ws,0,0,dpr*v.ws,dpr*(v.ox+sx),dpr*(v.oy+sy));
   ctx.save(); ctx.beginPath(); ctx.rect(0,0,v.vis,WH); ctx.clip();
   ctx.fillStyle=C.paper; ctx.fillRect(0,0,v.vis,WH);
-  const lead=Math.min(240, v.vis*0.28), camX=w.x-lead;
-  if(w.kind==='plane') drawPlaneWorld(w,t,camX,v.vis); else if(w.kind==='pieces') drawPiecesWorld(w,t,camX,v.vis); else drawRunWorld(w,t,camX,v.vis);
-  // exit portal at the end of the course
+  const lead=Math.min(240, v.vis*0.28);
+  let camX=w.x-lead;
   const ey = w.kind==='plane' ? 350 : w.GROUND-60;
+  if(w.kind==='pieces'){
+    // a close-up camera: the ragdoll is the show
+    const Z=1.9, vis=v.vis/Z;
+    w.camY = w.camY==null ? w.y : w.camY+(w.y-w.camY)*Math.min(1,dt*4);
+    camX=w.x-Math.min(240,vis*0.3);
+    ctx.save(); ctx.translate(0,WH*0.6); ctx.scale(Z,Z); ctx.translate(0,-w.camY);
+    drawPiecesWorld(w,t,camX,vis);
+    drawPortal(w.endX+30-camX, ey, 60, t, false);
+    ctx.restore();
+  } else if(w.kind==='plane') drawPlaneWorld(w,t,camX,v.vis); else drawRunWorld(w,t,camX,v.vis);
   if(w.msgT>0){ ctx.save(); ctx.globalAlpha=Math.min(1,w.msgT); ctx.fillStyle=C.fg; ctx.textAlign='center'; ctx.font=`800 22px ${getComputedStyle(document.body).getPropertyValue('--font-display')||'sans-serif'}`; wrapText(w.msg, v.vis/2, 70, v.vis-60, 28); ctx.restore(); }
-  drawPortal(w.endX+30-camX, ey, 60, t, false);
+  if(w.kind!=='pieces') drawPortal(w.endX+30-camX, ey, 60, t, false);
   ctx.restore();
   // title card until the first tap
   if(w.status==='ready'){
@@ -1632,8 +1731,8 @@ function stickHead(x,y,r){
 function drawPiecesWorld(w,t,camX,vis){
   // grid paper with a pencil-line landscape
   ctx.save(); ctx.strokeStyle=C.grid; ctx.lineWidth=1.5;
-  const off=((-camX)%40+40)%40; for(let x=off;x<vis;x+=40){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,WH); ctx.stroke(); }
-  for(let y=0;y<WH;y+=40){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(vis,y); ctx.stroke(); }
+  const off=((-camX)%40+40)%40; for(let x=off;x<vis;x+=40){ ctx.beginPath(); ctx.moveTo(x,-400); ctx.lineTo(x,WH+400); ctx.stroke(); }
+  for(let y=-400;y<WH+400;y+=40){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(vis,y); ctx.stroke(); }
   ctx.restore();
   ctx.save(); ctx.strokeStyle=C.pencil; ctx.lineWidth=6; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.beginPath();
   let pen=false;
@@ -1666,36 +1765,36 @@ function drawPiecesWorld(w,t,camX,vis){
       else { ctx.moveTo(-10,0); ctx.lineTo(10,0); }
       ctx.stroke(); ctx.restore();
     });
-  } else if(w.form==='ball'){
-    // just your head, blue hat and all, rolling along
-    ctx.translate(px,y); ctx.rotate(w.spin); ctx.lineWidth=3; stickHead(0,0,15);
-  } else if(w.form==='pogo'){
-    ctx.save(); ctx.translate(px,y); ctx.rotate(Math.min(1.6,w.lean)*0.5);
-    const sq=Math.max(0,Math.min(1,(w.vy+660)/1320));
-    ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,-8);
-    for(let i=0;i<5;i++) ctx.lineTo(i%2?-5:5, -8-i*3-sq*2); ctx.lineTo(0,-26); ctx.lineTo(0,-40); ctx.moveTo(-8,-26); ctx.lineTo(8,-26); ctx.stroke();
-    ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(2,-28); ctx.lineTo(4,-42); ctx.lineTo(2,-58); ctx.stroke();
-    ctx.lineWidth=3; stickHead(3,-66,8);
-    ctx.restore();
-    // leaning past the safe angle: you'll tip if you land like this
-    if(w.lean>1.15){ ctx.fillStyle=C.hazard; ctx.font='800 26px sans-serif'; ctx.textAlign='center'; ctx.fillText('!', px+18, y-92); }
-  } else if(w.form==='walk'){
-    const ph=t*9*(w.vx/140+0.2), a=Math.sin(ph)*0.6, b=-a, sway=Math.sin(t*7)*w.wob*0.7+w.wob*0.4;
-    ctx.translate(px,y);
-    ctx.beginPath(); ctx.moveTo(0,-24); ctx.lineTo(Math.sin(a)*12,0); ctx.moveTo(0,-24); ctx.lineTo(Math.sin(b)*12,0); ctx.stroke();
-    ctx.save(); ctx.translate(0,-24); ctx.rotate(sway);
-    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,-24); ctx.stroke(); ctx.lineWidth=3; stickHead(0,-38,14);
-    ctx.restore();
-    if(w.wob>0.35){ ctx.fillStyle=C.hazard; ctx.font='800 24px sans-serif'; ctx.textAlign='center'; ctx.fillText('!', 0, -80); }
   } else {
-    ctx.translate(px,y); ctx.scale(1.9,1.9); ctx.lineWidth=2.4;
-    const ph=t*16, a=Math.sin(ph)*0.7, b=Math.sin(ph+Math.PI)*0.7;
-    ctx.beginPath();
-    ctx.moveTo(0,-12); ctx.lineTo(Math.sin(a)*9, -12+Math.cos(a)*6); ctx.lineTo(Math.sin(a)*9-3, 0);
-    ctx.moveTo(0,-12); ctx.lineTo(Math.sin(b)*9, -12+Math.cos(b)*6); ctx.lineTo(Math.sin(b)*9-3, 0);
-    ctx.moveTo(0,-12); ctx.lineTo(2,-24); ctx.moveTo(1,-20); ctx.lineTo(8+a*3,-15); ctx.moveTo(1,-20); ctx.lineTo(-6+b*3,-15); ctx.stroke();
-    if(w.form==='whole'){ const fl=Math.sin(t*22)*2; ctx.strokeStyle=C.hazard; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(1,-24); ctx.quadraticCurveTo(-8,-25+fl,-15,-22-fl); ctx.stroke(); }
-    ctx.strokeStyle=C.fg; ctx.lineWidth=2.4; stickHead(3,-29,4.6);
+    const P=w.parts, X=q=>q.x-camX;
+    const line=(a,b)=>{ if(!a||!b) return; ctx.moveTo(X(a),a.y); ctx.lineTo(X(b),b.y); };
+    if(w.form==='ball'){
+      ctx.save(); ctx.translate(X(P.H),P.H.y); ctx.rotate(w.spin); ctx.lineWidth=3; stickHead(0,0,15); ctx.restore();
+    } else {
+      // scarf rope first, so the body draws over it
+      if(P.S0){ ctx.save(); ctx.strokeStyle=C.hazard; ctx.lineWidth=3.5; ctx.beginPath(); ctx.moveTo(X(P.N),P.N.y); for(let k=0;k<5;k++) ctx.lineTo(X(P['S'+k]),P['S'+k].y); ctx.stroke(); ctx.restore(); }
+      ctx.lineWidth=4; ctx.beginPath();
+      if(w.form==='pogo'){
+        line(P.P,P.N);
+        ctx.stroke();
+        // the pogo stick: a spring that squashes on landing, pegs at the hip
+        const dx=P.F.x-P.P.x, dy=P.F.y-P.P.y, L=Math.hypot(dx,dy)||1, ux=dx/L, uy=dy/L, nx=-uy, ny=ux;
+        ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(X(P.P),P.P.y);
+        const sStart=L*0.45;
+        ctx.lineTo(X(P.P)+ux*sStart,P.P.y+uy*sStart);
+        for(let k=1;k<=6;k++){ const tt=sStart+(L-sStart-4)*k/6, s=k%2?5:-5; ctx.lineTo(X(P.P)+ux*tt+nx*s, P.P.y+uy*tt+ny*s); }
+        ctx.lineTo(X(P.F),P.F.y); ctx.moveTo(X(P.P)-nx*8,P.P.y-ny*8); ctx.lineTo(X(P.P)+nx*8,P.P.y+ny*8); ctx.stroke();
+      } else {
+        line(P.F1,P.K1); line(P.K1,P.P); line(P.F2,P.K2); line(P.K2,P.P); line(P.P,P.N);
+        if(P.E1){ line(P.N,P.E1); line(P.E1,P.A1); line(P.N,P.E2); line(P.E2,P.A2); }
+        ctx.stroke();
+      }
+      // head tilts with the neck, hat and all
+      const ang=Math.atan2(P.H.x-P.N.x, P.N.y-P.H.y);
+      ctx.save(); ctx.translate(X(P.H),P.H.y); ctx.rotate(ang); ctx.lineWidth=3; stickHead(0,0,w.form==='walk'?11:9); ctx.restore();
+      if((w.form==='walk' && w.tilt>0.45 && w.getup<=0) || (w.form==='pogo' && Math.abs(w.tilt)>0.85 && w.getup<=0)){
+        ctx.fillStyle=C.hazard; ctx.font='800 24px sans-serif'; ctx.textAlign='center'; ctx.fillText('!', X(P.H)+16, P.H.y-18); }
+    }
   }
   ctx.restore();
 }
