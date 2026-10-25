@@ -86,6 +86,7 @@
          border-radius:18px;padding:8px 14px;font-weight:700;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.12);width:max-content;max-width:calc(100% - 24px);text-align:center;
          transition:opacity .2s, transform .2s;pointer-events:none}
   .toast.off{opacity:0;transform:translate(-50%,-6px)}
+  .rotate.riding{display:none}
   .rotate{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);font-size:12px;color:var(--muted);width:max-content;max-width:calc(100% - 24px);text-align:center;pointer-events:none}
   @media (orientation:landscape), (min-width:700px){ .rotate{display:none} }
   .fitbtn{position:absolute;right:8px;top:8px;border:1px solid var(--line);background:var(--surface);border-radius:999px;
@@ -104,7 +105,7 @@
         background:var(--marker);color:#1b1500;box-shadow:0 3px 0 rgba(0,0,0,.18);min-height:48px}
   .ride:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.18)}
   .ride.stop{background:var(--fg);color:var(--paper)}
-  @media (max-width:430px){ .tool .lbl,.seg .lbl{display:none} .seg button,.tool{padding:10px} }
+  @media (max-width:430px){ .tool .lbl,.seg .lbl{display:none} .seg button,.tool{padding:10px} .tray{gap:6px;flex-wrap:nowrap} .ride{padding:12px 16px} }
 
   /* Menu */
   .menu{position:fixed;inset:0;overflow-y:auto;background:var(--desk);z-index:20;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
@@ -180,6 +181,12 @@
   .actions button{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:11px 16px;font-weight:800}
   .actions button.main{background:var(--ink);color:var(--paper);border-color:var(--ink)}
   .sharetext{margin:12px 0 0;font-size:13px;color:var(--muted);white-space:pre-line;user-select:text;-webkit-user-select:text}
+  .hud{position:absolute;left:10px;bottom:10px;display:flex;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--line);
+       border-radius:999px;padding:6px 12px;font-weight:800;font-size:14px;font-variant-numeric:tabular-nums;pointer-events:none}
+  .hud .st{color:var(--fg)}
+  .tool.on{background:var(--fg);color:var(--paper);border-color:var(--fg)}
+  .herocv{display:block;width:100%;height:118px}
+  .streak{display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;background:var(--marker);color:#1b1500;font-weight:800;font-size:12px}
   @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
 </style>
 </head>
@@ -198,6 +205,7 @@
   <div class="stage" id="stage">
     <canvas id="game" aria-label="Drawing area. Draw a track from the rider to the flag."></canvas>
     <div class="toast off" id="toast"></div>
+    <div class="hud" id="hud" hidden><span class="st" id="hudStars">★ 0/3</span><span id="hudTime">0.0s</span></div>
     <div class="rotate" id="hint">Pinch to zoom · turn sideways for a bigger page</div>
     <button class="fitbtn" id="fitBtn" hidden>Show whole page</button>
     <div class="scrim" id="result" hidden>
@@ -233,6 +241,9 @@
     <button class="tool" id="clearBtn" title="Clear all ink">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg><span class="lbl">Clear</span>
     </button>
+    <button class="tool" id="hintBtn" title="Show a pencil sketch of one route" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span class="lbl">Hint</span>
+    </button>
     <div class="spacer"></div>
     <button class="ride" id="rideBtn" title="Ride (Space)">
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/></svg><span id="rideLbl">Ride</span>
@@ -249,6 +260,8 @@
       </div>
       <button class="iconbtn" id="muteBtn" aria-label="Sound on" title="Sound"></button>
     </div>
+
+    <canvas class="sheet herocv" id="heroCv" aria-hidden="true"></canvas>
 
     <div class="sheet daily">
       <div>
@@ -412,6 +425,22 @@ const LEVELS = [
     spikes:[[300,690,1000,690]], goal:[120,630], ink:2600, stars:[[880,180],[860,520],[500,560]] },
 ];
 
+// One verified 3-star route per level (control points; drawn smoothed). Shown as a pencil sketch on request.
+const HINTS = {
+  'first-ink': [[194,186,240,240,370,334,600,474,790,574,900,616,960,622]],
+  'mind-the-gap': [[194,186,225,230,255,275,280,300,298,296],[514,350,560,380,700,480,870,592,950,600]],
+  'bump': [[194,166,240,280,300,440,340,466,450,420,560,316,700,320,900,446,960,450]],
+  'booster': [[194,446,260,500,330,566,560,566,640,540,700,436,790,320,860,200,880,178,920,176]],
+  'spike-garden': [[194,166,240,240,330,344,570,394,800,534,900,614,960,620]],
+  'switchback': [[194,166,300,240,480,294,760,390],[850,330,920,400,945,480,920,560,860,610,600,630,110,642]],
+  'needle': [[194,166,230,210,300,314,340,335,378,330],[552,420,700,486,880,600,950,605]],
+  'canyon': [[194,156,214,196,232,236,250,256,268,250,270,248],[606,520,700,548,860,585,950,592]],
+  'zigzag': [[194,156,300,220,500,270,700,300],[790,240,900,300,940,380,900,450,800,480,500,500,300,505,200,505],[120,420,60,480,60,580,140,640,900,662,960,662]],
+  'launch': [[198,608,225,622,480,622,560,604,640,556,720,450,790,330,850,210,866,170]],
+  'grand-tour': [[194,146,400,140,700,170,880,194],[900,120,960,220,960,420,880,540,700,570,400,580],[300,500,200,560,140,652,60,660]],
+  'half-pipe': [[796,166,720,260,670,380,650,402,640,402],[380,402,250,400,160,372,110,300,100,220,130,150,200,112,300,112]]
+};
+
 /* ================= Daily generator ================= */
 function mulberry(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 function chaikin(pts, n){
@@ -492,7 +521,7 @@ function makeDaily(dayNo){
     if(rng()<0.5) mirror(lv);
     const refM = lv._mirrored ? ref.map((v,i)=>i%2?v:W-v) : ref;
     const res = simulate(lv,[refM]);
-    if(res.status==='win' && res.stars===3) return lv;
+    if(res.status==='win' && res.stars===3){ lv.hint=[refM]; return lv; }
   }
   return Object.assign({}, LEVELS[0], {id:'daily-'+dayNo, name:'Daily #'+dayNo});
 }
@@ -550,6 +579,7 @@ function tone(freq, dur, type='triangle', vol=0.05, slide=0){
   }catch(e){}
 }
 const sfx = {
+  land(v){ tone(120+Math.min(80,v/10),0.09,'sine',Math.min(0.07,0.02+v/12000)); },
   star(i){ tone(660*Math.pow(1.26,i),0.18,'triangle',0.06); },
   win(){ [523,659,784,1046].forEach((f,i)=>setTimeout(()=>tone(f,0.22,'triangle',0.06),i*90)); },
   crash(){ tone(220,0.35,'sawtooth',0.04,0.3); },
@@ -571,6 +601,9 @@ let cam={z:1,cx:W/2,cy:H/2}, camBeforeRide=null;
 const pointers=new Map(); let gesture=null, gestureLock=false;
 let acc=0, lastT=0;
 let shake=0;
+let wipeouts=0, showHint=false, ragdoll=null, airT=0, timeScale=1;
+const reduceMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const hintBtn=$('hintBtn'), hud=$('hud');
 
 function inkBudget(){ return level.ink; }
 function inkLeft(){ return Math.max(0, inkBudget()-inkUsed(strokes)); }
@@ -592,6 +625,7 @@ function openLevel(idx){
   level = idx<0 ? makeDaily(dayNumber(new Date())) : LEVELS[idx];
   strokes = (save.strokes[level.id]||[]).map(s=>s.slice());
   history=[]; ghost=null; fx=[];
+  wipeouts=0; showHint=false; hintBtn.hidden=true; hintBtn.classList.remove('on');
   $('lvlNum').textContent = idx<0 ? new Date().toLocaleDateString(undefined,{month:'short',day:'numeric'}) : 'Level '+(idx+1);
   $('lvlName').textContent = level.name;
   menu.hidden=true; resultEl.hidden=true;
@@ -605,7 +639,8 @@ function toEdit(){
   mode='edit'; sim=null;
   rideBtn.classList.remove('stop'); rideLbl.textContent='Ride';
   rideBtn.querySelector('svg').innerHTML='<path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/>';
-  [penBtn,eraseBtn,undoBtn,clearBtn].forEach(b=>b.disabled=false);
+  [penBtn,eraseBtn,undoBtn,clearBtn,hintBtn].forEach(b=>b.disabled=false);
+  ragdoll=null; hud.hidden=true; $('hint').classList.remove('riding');
   riderAngle=0; riderFacing=(level.v||[1])[0]<0?-1:1;
 }
 function startRide(){
@@ -613,7 +648,8 @@ function startRide(){
   sim=createSim(level, strokes); mode='run'; acc=0; camBeforeRide={...cam};
   rideBtn.classList.add('stop'); rideLbl.textContent='Stop';
   rideBtn.querySelector('svg').innerHTML='<rect x="6" y="6" width="12" height="12" rx="2"/>';
-  [penBtn,eraseBtn,undoBtn,clearBtn].forEach(b=>b.disabled=true);
+  [penBtn,eraseBtn,undoBtn,clearBtn,hintBtn].forEach(b=>b.disabled=true);
+  airT=0; timeScale=1; hud.hidden=false; $('hint').classList.add('riding');
   sfx.go();
 }
 function stopRide(){
@@ -628,7 +664,17 @@ function handleEvents(){
   for(const e of ev){
     if(e.type==='star'){ sfx.star(sim.st.stars.filter(Boolean).length-1); burst(level.stars[e.i][0], level.stars[e.i][1], C.marker, 16); }
     else if(e.type==='win'){ sfx.win(); confetti(); mode='done'; setTimeout(showResult, 650); }
-    else if(e.type==='crash'){ sfx.crash(); shake=10; burst(sim.st.x, sim.st.y, C.hazard, 22); mode='done'; toast(e.reason+' Tap Stop to tweak your track.', 2400); }
+    else if(e.type==='crash'){
+      sfx.crash(); shake=10; burst(sim.st.x, sim.st.y, C.hazard, 22); mode='done';
+      const {x,y,vx,vy}=sim.st, r=()=>Math.random()-0.5;
+      // the rider and sled part ways
+      ragdoll=[{k:'sled',x,y,vx:vx*0.6+r()*80,vy:vy*0.5-120,a:riderAngle,va:r()*12},
+               {k:'body',x,y:y-6,vx:vx*0.8+r()*120,vy:vy*0.4-320,a:riderAngle,va:r()*16}];
+      wipeouts++;
+      const hasHint = !!(HINTS[level.id] || level.hint);
+      if(wipeouts>=2 && hasHint && hintBtn.hidden){ hintBtn.hidden=false; toast(e.reason+' Stuck? Tap Hint for a pencil sketch.', 3000); }
+      else toast(e.reason+' Tap Stop to tweak your track.', 2400);
+    }
   }
 }
 
@@ -648,6 +694,11 @@ function showResult(){
   const book = daily ? save.daily : save.levels;
   const prev = book[level.id];
   if(!prev || got>prev.stars || (got===prev.stars && used<prev.ink)) book[level.id]={stars:got, ink:used, time:+time.toFixed(1)};
+  if(daily){
+    const day=dayNumber(new Date()), s=save.streak||{last:0,count:0};
+    if(s.last!==day){ s.count = s.last===day-1 ? s.count+1 : 1; s.last=day; }
+    save.streak=s;
+  }
   storeStrokes();
   persist();
   $('shareBtn').hidden = !daily;
@@ -661,7 +712,8 @@ function showResult(){
 function shareLine(){
   const r=save.daily[level.id];
   const stars=[0,1,2].map(i=>i<r.stars?'★':'☆').join('');
-  return `Ink Rider · ${level.name}\n${stars}  ${r.ink}% ink  ${r.time}s`;
+  const s=save.streak, streak = s && s.count>1 ? `\n${s.count}-day streak` : '';
+  return `Ink Rider · ${level.name}\n${stars}  ${r.ink}% ink  ${r.time}s${streak}`;
 }
 
 /* ================= Input ================= */
@@ -771,6 +823,15 @@ eraseBtn.onclick=()=>setTool('erase');
 undoBtn.onclick=()=>{ if(mode!=='edit'||!history.length) return; strokes=history.pop(); updateInk(); storeStrokes(); };
 clearBtn.onclick=()=>{ if(mode!=='edit'||!strokes.length) return; snapshot(); strokes=[]; ghost=null; updateInk(); storeStrokes(); toast('Page cleared. Undo brings it back.'); };
 rideBtn.onclick=()=>{ mode==='edit' ? startRide() : stopRide(); };
+// Touch: act on finger lift so a tap right after drawing is never lost to a swallowed click.
+// The browser's own click that follows is dropped so nothing fires twice; mouse and keyboard keep using click.
+function tapify(el){
+  let last=0;
+  el.addEventListener('pointerup', e=>{ if(e.pointerType==='mouse' || el.disabled || el.hidden) return; last=performance.now(); el.click(); });
+  el.addEventListener('click', e=>{ if(e.isTrusted && performance.now()-last<700){ e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+}
+['rideBtn','penBtn','eraseBtn','undoBtn','clearBtn','hintBtn','backBtn','fitBtn','retryBtn','nextBtn'].forEach(id=>tapify($(id)));
+hintBtn.onclick=()=>{ if(mode!=='edit') return; showHint=!showHint; hintBtn.classList.toggle('on',showHint); if(showHint) toast('Trace the pencil sketch. It is one route that gets all three stars.', 2600); };
 $('backBtn').onclick=()=>showMenu();
 $('retryBtn').onclick=()=>stopRide();
 $('nextBtn').onclick=()=>{
@@ -812,7 +873,9 @@ function showMenu(){
   const today=new Date(), dn=dayNumber(today), dlv=makeDaily(dn), rec=save.daily[dlv.id];
   $('dailyDate').textContent='Today · '+today.toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'});
   $('dailyName').textContent=dlv.name;
-  $('dailyBest').innerHTML = rec ? `Best: ${[0,1,2].map(k=>k<rec.stars?'★':'☆').join('')} · ${rec.ink}% ink · ${rec.time}s` : 'A new page every day. Not ridden yet.';
+  const sk=save.streak, alive = sk && sk.count>0 && sk.last>=dn-1;
+  const streakTag = alive ? `<span class="streak">${sk.count}-day streak</span>` : '';
+  $('dailyBest').innerHTML = (rec ? `Best: ${[0,1,2].map(k=>k<rec.stars?'★':'☆').join('')} · ${rec.ink}% ink · ${rec.time}s` : (alive ? 'Ride today to keep your streak going.' : 'A new page every day. Not ridden yet.'))+streakTag;
   $('dailyBtn').textContent = rec ? 'Ride again' : "Ride today's";
   $('muteBtn').innerHTML=SPEAKER(save.muted); $('muteBtn').setAttribute('aria-label', save.muted?'Sound off':'Sound on');
   menu.hidden=false; menu.scrollTop=0;
@@ -964,28 +1027,49 @@ function updateRiderPose(dt){
   const rate = st.contact ? 18 : 5;
   riderAngle += angDiff(riderAngle,target)*Math.min(1,dt*rate);
 }
-function drawRider(x,y,t,crashed){
-  ctx.save(); ctx.translate(x,y); ctx.rotate(riderAngle); ctx.scale(riderFacing,1);
-  if(crashed){ ctx.rotate(Math.min(1.6,(t)*6)); }
+function sledShape(){
   ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle=C.fg; ctx.lineWidth=2.4;
-  // sled
   ctx.beginPath(); ctx.moveTo(-15,8); ctx.lineTo(10,8); ctx.quadraticCurveTo(17,8,16,1); ctx.stroke();
   ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(-9,8); ctx.lineTo(-9,4); ctx.moveTo(6,8); ctx.lineTo(6,4); ctx.stroke();
   ctx.lineWidth=2.4; ctx.beginPath(); ctx.moveTo(-14,4); ctx.lineTo(11,4); ctx.stroke();
-  // scarf trailing
-  const fl=Math.sin(t*22)*2;
+}
+function bodyShape(t){
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  const fl=Math.sin(t*22)*2;   // scarf flapping
   ctx.strokeStyle=C.hazard; ctx.lineWidth=3;
   ctx.beginPath(); ctx.moveTo(-1,-9); ctx.quadraticCurveTo(-9,-10+fl,-16,-7-fl); ctx.stroke();
-  // body
   ctx.strokeStyle=C.fg; ctx.lineWidth=2.4;
   ctx.beginPath(); ctx.moveTo(-4,3); ctx.lineTo(0,-9); ctx.moveTo(-4,3); ctx.lineTo(7,3); ctx.moveTo(-1,-5); ctx.lineTo(9,-1); ctx.lineTo(12,3); ctx.stroke();
   ctx.fillStyle=C.paper; ctx.beginPath(); ctx.arc(1,-14,4.6,0,7); ctx.fill(); ctx.stroke();
-  // hat
   ctx.fillStyle=C.ink; ctx.beginPath(); ctx.arc(1,-15.5,4.8,Math.PI,0); ctx.fill();
+}
+function drawRider(x,y,t){
+  ctx.save(); ctx.translate(x,y); ctx.rotate(riderAngle); ctx.scale(riderFacing,1);
+  sledShape(); bodyShape(t);
+  ctx.restore();
+}
+function drawRagdoll(dt,t){
+  for(const p of ragdoll){
+    p.vy+=G*dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.a+=p.va*dt;
+    ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.a); ctx.scale(riderFacing,1);
+    if(p.k==='sled') sledShape(); else bodyShape(t);
+    ctx.restore();
+  }
+}
+function drawHint(){
+  const h = level.hint || HINTS[level.id];
+  if(!showHint || !h || mode!=='edit') return;
+  ctx.save(); ctx.globalAlpha=0.55; ctx.strokeStyle=C.pencil; ctx.lineWidth=3; ctx.lineCap='round'; ctx.setLineDash([10,9]);
+  for(const s of h){ smoothPoly(chaikin(s,3)); ctx.stroke(); }
   ctx.restore();
 }
 function burst(x,y,color,n){
   for(let i=0;i<n;i++){ const a=Math.random()*Math.PI*2, s=60+Math.random()*220; fx.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-60,life:0.6+Math.random()*0.4,max:1,color,size:2+Math.random()*3}); }
+}
+function landPuff(x,y,strength){
+  const n=Math.min(14, 4+Math.round(strength/60));
+  for(let i=0;i<n;i++){ const side=i%2?1:-1, s=40+Math.random()*strength*0.35;
+    fx.push({x:x+side*6,y:y+9,vx:side*s,vy:-20-Math.random()*50,life:0.35+Math.random()*0.25,color:C.muted,size:2+Math.random()*2.5,g:150}); }
 }
 function confetti(){
   const cols=[C.marker,C.hazard,C.boost,C.ink];
@@ -995,7 +1079,7 @@ function confetti(){
 function drawFx(dt){
   fx=fx.filter(p=>(p.life-=dt)>0);
   for(const p of fx){
-    p.vy+=600*dt; p.vx*=1-1.2*dt; p.x+=p.vx*dt; p.y+=p.vy*dt;
+    p.vy+=(p.g??600)*dt; p.vx*=1-1.2*dt; p.x+=p.vx*dt; p.y+=p.vy*dt;
     ctx.globalAlpha=Math.min(1,p.life*2); ctx.fillStyle=p.color;
     ctx.save(); ctx.translate(p.x,p.y); ctx.rotate((p.spin||0)*p.life); ctx.fillRect(-p.size/2,-p.size/2,p.size,p.size*(p.spin?1.6:1)); ctx.restore();
   }
@@ -1008,16 +1092,62 @@ function drawStartMarker(){
 }
 
 let crashT=0;
+// Menu header: a rider sledding an endless pen line
+const heroCv=$('heroCv'), heroCtx=heroCv.getContext('2d');
+let heroOff=0;
+function drawHero(t,dt){
+  const r=heroCv.getBoundingClientRect(), dpr=Math.min(3,window.devicePixelRatio||1);
+  if(!r.width) return;
+  const w=r.width, h=r.height;
+  if(heroCv.width!==Math.round(w*dpr)){ heroCv.width=Math.round(w*dpr); heroCv.height=Math.round(h*dpr); }
+  const yAt=u=>h*0.55+h*0.16*Math.sin(u*0.011)+h*0.09*Math.sin(u*0.029+1.3);
+  const xr=Math.min(150,w*0.28), slope=(yAt(xr+heroOff+2)-yAt(xr+heroOff-2))/4;
+  if(!reduceMotion) heroOff+=dt*(190+slope*260);
+  const prev=ctx, pa=riderAngle, pf=riderFacing; ctx=heroCtx;
+  ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
+  ctx.strokeStyle=C.ink; ctx.lineWidth=4; ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.beginPath(); for(let x=-4;x<=w+4;x+=6){ const y=yAt(x+heroOff); x<0?ctx.moveTo(x,y):ctx.lineTo(x,y); } ctx.stroke();
+  // stars ride along the line; the ones behind the rider count as collected
+  for(let k=Math.floor(heroOff/360); k<=Math.floor((heroOff+w)/360)+1; k++){
+    const sx=k*360+200-heroOff; if(sx<xr+6) continue;
+    starPath(sx, yAt(k*360+200)-30+Math.sin(t*2.4+k)*2, 11); ctx.fillStyle=C.marker; ctx.fill(); ctx.lineWidth=1.6; ctx.strokeStyle=C.fg; ctx.stroke();
+  }
+  riderAngle=Math.atan(slope); riderFacing=1;
+  ctx.save(); ctx.translate(xr, yAt(xr+heroOff)-R*1.5); ctx.scale(1.5,1.5); ctx.translate(-xr,-(yAt(xr+heroOff)-R*1.5));
+  drawRider(xr, yAt(xr+heroOff)-R*1.5, t); ctx.restore();
+  ctx=prev; riderAngle=pa; riderFacing=pf;
+}
 function frame(now){
   const dt=Math.min(0.05,(now-(lastT||now))/1000); lastT=now;
   const t=now/1000;
+  if(!menu.hidden){ drawHero(t,dt); requestAnimationFrame(frame); return; }
   if(mode==='run' && sim){
-    acc+=dt;
+    // a beat of slow motion as the rider reaches the flag
+    const near = !reduceMotion && Math.hypot(sim.st.x-level.goal[0], sim.st.y-level.goal[1]) < 120;
+    timeScale += ((near?0.35:1)-timeScale)*Math.min(1,dt*10);
+    acc+=dt*timeScale;
+    const vyBefore=sim.st.vy;
     while(acc>=DT && sim.st.status==='run'){ sim.step(); acc-=DT; }
+    const st=sim.st;
+    if(st.status==='run'){
+      if(!st.contact) airT+=dt;
+      else {
+        if(airT>0.22 && vyBefore>150){ landPuff(st.x,st.y,vyBefore); sfx.land(vyBefore); }
+        airT=0;
+        const sp=Math.hypot(st.vx,st.vy);
+        if(sp>520 && !reduceMotion && Math.random()<0.7)
+          fx.push({x:st.x-st.vx/sp*12, y:st.y+7, vx:-st.vx*0.25+(Math.random()-0.5)*60, vy:-40-Math.random()*60, life:0.3+Math.random()*0.2, color:C.muted, size:1.5+Math.random()*2, g:300});
+      }
+    }
     handleEvents();
     if(sim.st.status!=='run') crashT=0;
   } else if(mode==='done' && sim && sim.st.status==='crash'){ crashT+=dt; }
   updateRiderPose(dt);
+  if(sim && !hud.hidden){
+    const got=sim.st.stars.filter(Boolean).length, txt=`★ ${got}/${level.stars.length}`;
+    if($('hudStars').textContent!==txt) $('hudStars').textContent=txt;
+    $('hudTime').textContent=sim.st.t.toFixed(1)+'s';
+  }
   // zoomed in during a ride: the camera follows the rider (unless fingers are on the glass)
   if(sim && mode!=='edit' && cam.z>1.02 && !gesture){
     const k=Math.min(1,dt*4);
@@ -1027,7 +1157,7 @@ function frame(now){
   const dpr=view.dpr;
   // Static layer (paper, zones, ground, ink) is only repainted when something in it changes
   const key=[view.cw,view.ch,dpr,view.s.toFixed(5),view.ox.toFixed(2),view.oy.toFixed(2),level.id,mode==='edit',
-    strokes.length,strokes.reduce((a,s)=>a+s.length,0),history.length,ghost?ghost.length:0,C.paper].join('|');
+    strokes.length,strokes.reduce((a,s)=>a+s.length,0),history.length,ghost?ghost.length:0,C.paper,showHint].join('|');
   if(key!==frame.key){
     frame.key=key; ctx=layerCtx;
     ctx.setTransform(dpr,0,0,dpr,0,0);
@@ -1035,7 +1165,7 @@ function frame(now){
     ctx.setTransform(dpr*view.s,0,0,dpr*view.s,dpr*view.ox,dpr*view.oy);
     ctx.save(); ctx.shadowColor='rgba(10,30,60,.18)'; ctx.shadowBlur=18; ctx.shadowOffsetY=4; ctx.fillStyle=C.paper; ctx.fillRect(0,0,W,H); ctx.restore();
     ctx.save(); ctx.beginPath(); ctx.rect(0,0,W,H); ctx.clip();
-    drawPaper(); drawNoDraw(); drawGhost(); drawFixed(); drawInk();
+    drawPaper(); drawNoDraw(); drawGhost(); drawHint(); drawFixed(); drawInk();
     if(mode==='edit') drawStartMarker();
     ctx.restore();
     ctx=mainCtx;
@@ -1048,8 +1178,9 @@ function frame(now){
   ctx.save(); ctx.beginPath(); ctx.rect(0,0,W,H); ctx.clip();
   drawChevrons(); drawGoal(t); drawStars(t);
   drawTrail();
-  if(sim) drawRider(sim.st.x, sim.st.y, t, sim.st.status==='crash' ? crashT : 0);
-  else drawRider(level.start[0], level.start[1], t, 0);
+  if(ragdoll) drawRagdoll(dt,t);
+  else if(sim) drawRider(sim.st.x, sim.st.y, t);
+  else drawRider(level.start[0], level.start[1], t);
   drawFx(dt);
   ctx.restore();
   requestAnimationFrame(frame);

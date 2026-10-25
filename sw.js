@@ -1,5 +1,5 @@
 // Ink Rider offline cache: the game is one page, so cache it and its fonts and icons.
-const CACHE = 'inkrider-v2';
+const CACHE = 'inkrider-v3';
 const CORE = ['./', './index.html', './manifest.webmanifest', './icons/apple-touch-icon.png', './icons/icon-192.png', './icons/icon-512.png'];
 
 self.addEventListener('install', e => {
