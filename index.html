@@ -384,7 +384,7 @@ function createSim(lv, strokes){
       for(const g of segs){
         if(g.kind==='spike') continue;
         let u=((s.x-g.ax)*g.dx+(s.y-g.ay)*g.dy)/g.len2; u=u<0?0:u>1?1:u;
-        if((s.x-g.ax-g.dx*u)**2+(s.y-g.ay-g.dy*u)**2 < 9){ s.stuck=true; break; }
+        if((s.x-g.ax-g.dx*u)**2+(s.y-g.ay-g.dy*u)**2 < 9){ s.stuck=true; s.stuckAt=s.age; break; }
       }
       if(s.stuck) continue;
       const L=Math.hypot(s.vx,s.vy)||1, tx=s.x-s.vx/L*SPEAR_LEN, ty=s.y-s.vy/L*SPEAR_LEN;
@@ -509,7 +509,7 @@ const HINTS = {
 
 // Drawn worlds: a portal can open onto another page you draw on. Its flag is an exit portal back out.
 const SUBLEVELS = {
-  'spear-valley-page': { id:'spear-valley-page', name:'Spear Valley', goalPortal:true,
+  'spear-valley-page': { id:'spear-valley-page', name:'Spear Valley', goalPortal:true, theme:'valley',
     note:'Goblins throw on a beat. Ink stops spears, so draw a shield if you need one.',
     start:[70,92], ground:[ledge(70,92),[500,620,620,620],[550,170,650,170]], spikes:[[0,690,1000,690]],
     goblins:[{x:560,y:620,dir:-1,v:[-260,-620],every:1.5,t0:0.2},{x:600,y:170,dir:1,v:[180,-100],every:0.6,t0:0.2}],
@@ -951,7 +951,7 @@ function setRideUI(on){
   hud.hidden=!on; $('hint').classList.toggle('riding',on);
 }
 function setHeader(){
-  if(nest.length){ $('lvlNum').textContent='Through the portal'; }
+  if(nest.length){ $('lvlNum').textContent='Portal'; }
   else $('lvlNum').textContent = levelIndex<0 ? new Date().toLocaleDateString(undefined,{month:'short',day:'numeric'}) : 'Level '+(levelIndex+1);
   $('lvlName').textContent = level.name;
 }
@@ -1717,6 +1717,219 @@ function drawWarp(dt){
   else { ctx.beginPath(); ctx.rect(0,0,view.cw,view.ch); ctx.arc(sx,sy,e*maxR,0,7,true); ctx.fill('evenodd'); }
   if(k>=1){ const d=warp; warp=null; if(d.dir==='in'){ level.portals[d.i].sub ? enterSubLevel(d.i) : enterWorld(d.i); } }
 }
+/* ---- Spear Valley look: a side view with depth ----
+   Parallax layers behind, extruded stone and ink, lit goblins with shadows. Gameplay is unchanged. */
+const VALLEY_PAL = {
+  light:{ sky0:'#f0a878', sky1:'#fde4c4', sun:'#fff4dc', glow:'rgba(255,214,160,0.55)', far:'#c99aa0', far2:'#b98794', mid:'#8a6f8a', tree:'#6c5577', near:'#4c3b56',
+          haze:'rgba(253,228,196,', top:'#b7aba0', face:'#7a6c62', edge:'#3a302b', inkTop:'#2a4ad0', inkSide:'#142a86', inkHi:'#9fb4ff',
+          spike:'#d55236', spikeDark:'#842a1a', goblin:'#69b05a', goblinDark:'#3d7535', tunic:'#8a5f3a', belt:'#4a3020', wood:'#a87a4a', iron:'#c9cdd6', ironDark:'#6b7180',
+          arc:'#b03a24', shadow:'rgba(40,20,30,0.28)', flame:'#ffb347', flame2:'#ff6a2b' },
+  dark: { sky0:'#070f26', sky1:'#2b2c5c', sun:'#eef0ff', glow:'rgba(170,180,255,0.35)', far:'#2c3366', far2:'#252a55', mid:'#1f2148', tree:'#17183a', near:'#0f0f28',
+          haze:'rgba(90,96,170,', top:'#6d6a86', face:'#3e3b55', edge:'#16142a', inkTop:'#e9efff', inkSide:'#7b8ed6', inkHi:'#ffffff',
+          spike:'#ff6a52', spikeDark:'#8e2a1d', goblin:'#7fd06a', goblinDark:'#3f7f36', tunic:'#8a6040', belt:'#3a2618', wood:'#b58a5a', iron:'#d9deea', ironDark:'#7b8294',
+          arc:'#ff8a6e', shadow:'rgba(0,0,10,0.45)', flame:'#ffc35a', flame2:'#ff7a33' } };
+const DEPTH = {x:8, y:-6};   // how far the back edge of every solid sits
+let V=VALLEY_PAL.light, valleyPar=0, valleyScene=null, lastStuck=0;
+function valleyPalette(){
+  const hex=C.paper.replace('#',''), n=parseInt(hex.length===3?hex.split('').map(c=>c+c).join(''):hex,16);
+  const lum=((n>>16)&255)*0.3+((n>>8)&255)*0.59+(n&255)*0.11;
+  V = lum<110 ? VALLEY_PAL.dark : VALLEY_PAL.light;
+}
+function buildValleyScene(){
+  const r=mulberry(4242), ridge=(base,amp,n)=>{ const p=[]; for(let i=0;i<=n;i++){ p.push(-200+i*(1400/n), base-amp*(0.35+r()*0.65)); } return p; };
+  const trees=[]; for(let i=0;i<46;i++) trees.push({x:-150+r()*1300, s:0.6+r()*0.7, row:r()<0.5?0:1});
+  const rocks=[]; for(let i=0;i<9;i++) rocks.push({x:-100+i*150+r()*60, w:70+r()*90, h:30+r()*50});
+  const motes=[]; for(let i=0;i<26;i++) motes.push({x:r()*1000, y:200+r()*450, p:r()*6, s:0.5+r()});
+  valleyScene={far:ridge(330,190,14), far2:ridge(400,140,18), trees, rocks, motes};
+}
+function hillY(x){ return 470+26*Math.sin(x/160)+14*Math.sin(x/61+2); }
+function drawValleyBack(t){
+  if(!valleyScene) buildValleyScene();
+  const sc=valleyScene, p=valleyPar;
+  const g=ctx.createLinearGradient(0,0,0,H); g.addColorStop(0,V.sky0); g.addColorStop(0.75,V.sky1); ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  // sun (moon at night) with a soft glow
+  const sx=790-p*0.04, sy=140;
+  const gl=ctx.createRadialGradient(sx,sy,10,sx,sy,190); gl.addColorStop(0,V.glow); gl.addColorStop(1,'rgba(0,0,0,0)'); ctx.fillStyle=gl; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle=V.sun; ctx.beginPath(); ctx.arc(sx,sy,46,0,7); ctx.fill();
+  const ridge=(pts,off,col)=>{ ctx.fillStyle=col; ctx.beginPath(); ctx.moveTo(pts[0]-off,H); for(let i=0;i<pts.length;i+=2) ctx.lineTo(pts[i]-off,pts[i+1]); ctx.lineTo(pts[pts.length-2]-off,H); ctx.closePath(); ctx.fill(); };
+  const haze=(y0,y1,a)=>{ const hz=ctx.createLinearGradient(0,y0,0,y1); hz.addColorStop(0,V.haze+'0)'); hz.addColorStop(1,V.haze+a+')'); ctx.fillStyle=hz; ctx.fillRect(0,y0,W,H-y0); };
+  ridge(sc.far, p*0.06, V.far);
+  haze(160,420,0.55);
+  ridge(sc.far2, p*0.12, V.far2);
+  // mid hillside with layered pines
+  const mo=p*0.25;
+  ctx.fillStyle=V.mid; ctx.beginPath(); ctx.moveTo(0,H); for(let x=0;x<=W;x+=20) ctx.lineTo(x,hillY(x+mo)); ctx.lineTo(W,H); ctx.closePath(); ctx.fill();
+  for(const tr of sc.trees){
+    const x=tr.x-mo*(tr.row?1.1:0.9); if(x<-40||x>W+40) continue;
+    const base=hillY(x+mo)+6+tr.row*14, h=60*tr.s, w=22*tr.s;
+    ctx.fillStyle=tr.row?V.near:V.tree;
+    for(let k=0;k<3;k++){ const yy=base-h*0.3*k; ctx.beginPath(); ctx.moveTo(x-w*(1-k*0.22),yy); ctx.lineTo(x,yy-h*0.55); ctx.lineTo(x+w*(1-k*0.22),yy); ctx.closePath(); ctx.fill(); }
+  }
+  haze(380,640,0.35);
+  // near boulders at the bottom edge
+  const no=p*0.5; ctx.fillStyle=V.near;
+  for(const rk of sc.rocks){ const x=rk.x-no; ctx.beginPath(); ctx.ellipse(x,H-6,rk.w,rk.h,0,Math.PI,0); ctx.fill(); }
+  // drifting dust in the light
+  ctx.fillStyle=V.sun;
+  for(const m of sc.motes){ ctx.globalAlpha=0.25+0.25*Math.sin(t*1.3+m.p); ctx.beginPath(); ctx.arc((m.x+t*8*m.s-p*0.3+1000)%1000, m.y+Math.sin(t*0.7+m.p)*10, 1.6*m.s,0,7); ctx.fill(); }
+  ctx.globalAlpha=1;
+}
+// a line drawn as a solid beam: the top strip recedes by DEPTH, the face drops down
+function beam(poly, faceH, topCol, faceCol, edgeCol, lw){
+  const n=poly.length; if(n<4) return;
+  // the receding top is a stack of offset strokes, so it stays seamless along curves
+  ctx.save(); ctx.strokeStyle=topCol; ctx.lineWidth=Math.max(3,lw); ctx.lineCap='round'; ctx.lineJoin='round';
+  for(let k=5;k>=1;k--){ ctx.save(); ctx.translate(DEPTH.x*k/5, DEPTH.y*k/5); pathPoly(poly); ctx.stroke(); ctx.restore(); }
+  ctx.restore();
+  if(faceH>0){
+    ctx.fillStyle=faceCol; ctx.beginPath(); ctx.moveTo(poly[0],poly[1]);
+    for(let i=2;i<n;i+=2) ctx.lineTo(poly[i],poly[i+1]);
+    for(let i=n-2;i>=0;i-=2) ctx.lineTo(poly[i],poly[i+1]+faceH);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.strokeStyle=edgeCol; ctx.lineWidth=lw; ctx.lineCap='round'; ctx.lineJoin='round';
+  pathPoly(poly); ctx.stroke();
+}
+function drawValleySolids(){
+  // ground slabs
+  for(const p of level.ground||[]) beam(p, 18, V.top, V.face, V.edge, 3);
+  // spikes as shaded cones in two rows
+  for(const p of level.spikes||[]){
+    for(let row=1; row>=0; row--){
+      const ox=DEPTH.x*row*0.8, oy=DEPTH.y*row*0.8;
+      for(let i=0;i+3<p.length;i+=2){
+        const L=Math.hypot(p[i+2]-p[i],p[i+3]-p[i+1]), ux=(p[i+2]-p[i])/L, uy=(p[i+3]-p[i+1])/L, n=Math.max(1,Math.round(L/16)), st=L/n;
+        for(let k=0;k<n;k++){
+          const x0=p[i]+ux*k*st+ox, y0=p[i+1]+uy*k*st+oy, tx=x0+ux*st/2+uy*18, ty=y0+uy*st/2-ux*18, x1=x0+ux*st, y1=y0+uy*st, mx=(x0+x1)/2, my=(y0+y1)/2;
+          ctx.globalAlpha=row?0.6:1;
+          ctx.fillStyle=V.spike; ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(tx,ty); ctx.lineTo(mx,my); ctx.closePath(); ctx.fill();
+          ctx.fillStyle=V.spikeDark; ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(tx,ty); ctx.lineTo(x1,y1); ctx.closePath(); ctx.fill();
+        }
+      }
+    }
+    ctx.globalAlpha=1;
+  }
+}
+function drawValleyInk(){
+  for(const s of strokes){
+    if(s.length<4) continue;
+    const pts=s.length>8 ? chaikin(s,1) : s;
+    beam(pts, 0, V.inkSide, null, V.inkTop, 4.5);
+    ctx.save(); ctx.globalAlpha=0.6; ctx.strokeStyle=V.inkHi; ctx.lineWidth=1.4; ctx.translate(0,-1.4); pathPoly(pts); ctx.stroke(); ctx.restore();
+  }
+}
+// where a shadow cast straight down from (x,y) lands
+function groundBelow(x,y){
+  let best=H+40;
+  const segsList = sim ? sim.segs : null;
+  const test=(ax,ay,bx,by)=>{ if((x<ax&&x<bx)||(x>ax&&x>bx)||ax===bx) return; const yy=ay+(by-ay)*(x-ax)/(bx-ax); if(yy>y-2 && yy<best) best=yy; };
+  if(segsList) for(const s of segsList) test(s.ax,s.ay,s.bx,s.by);
+  else { for(const p of [...(level.ground||[]), ...strokes]) for(let i=0;i+3<p.length;i+=2) test(p[i],p[i+1],p[i+2],p[i+3]); }
+  return best;
+}
+function softShadow(x,y,w){
+  const gy=groundBelow(x,y); if(gy>H) return;
+  const k=Math.max(0.15, 1-(gy-y)/260);
+  ctx.save(); ctx.globalAlpha=k; ctx.fillStyle=V.shadow; ctx.beginPath(); ctx.ellipse(x+3,gy+1,w*(1.3-k*0.3),3.5,0,0,7); ctx.fill(); ctx.restore();
+}
+function torch(x,y,t){
+  const f=Math.sin(t*17+x)*0.5+Math.sin(t*29+y)*0.5;
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  const gl=ctx.createRadialGradient(x,y-34,4,x,y-34,90+f*8); gl.addColorStop(0,'rgba(255,170,80,0.35)'); gl.addColorStop(1,'rgba(255,120,40,0)');
+  ctx.fillStyle=gl; ctx.fillRect(x-110,y-140,220,220);
+  ctx.restore();
+  ctx.strokeStyle=V.belt; ctx.lineWidth=4; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x,y-28); ctx.stroke();
+  ctx.fillStyle=V.flame2; ctx.beginPath(); ctx.moveTo(x-6,y-28); ctx.quadraticCurveTo(x-7,y-40-f*3,x+f*2,y-50-f*4); ctx.quadraticCurveTo(x+7,y-40,x+6,y-28); ctx.closePath(); ctx.fill();
+  ctx.fillStyle=V.flame; ctx.beginPath(); ctx.moveTo(x-3,y-29); ctx.quadraticCurveTo(x-3,y-37,x+f,y-43-f*2); ctx.quadraticCurveTo(x+4,y-37,x+3,y-29); ctx.closePath(); ctx.fill();
+}
+function spear3d(x,y,vx,vy,motion){
+  const L=Math.hypot(vx,vy)||1, ux=vx/L, uy=vy/L, len=SPEAR_LEN+8;
+  if(motion){ ctx.save(); ctx.globalAlpha=0.25; ctx.strokeStyle=V.sun; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x-ux*len*2.2,y-uy*len*2.2); ctx.lineTo(x-ux*len,y-uy*len); ctx.stroke(); ctx.restore(); }
+  ctx.lineCap='round';
+  ctx.strokeStyle=V.belt; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(x-ux*len,y-uy*len); ctx.lineTo(x-ux*6,y-uy*6); ctx.stroke();
+  ctx.strokeStyle=V.wood; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x-ux*len-uy*0.8,y-uy*len+ux*0.8); ctx.lineTo(x-ux*6-uy*0.8,y-uy*6+ux*0.8); ctx.stroke();
+  // fletching
+  ctx.fillStyle=V.spike; ctx.beginPath(); ctx.moveTo(x-ux*len,y-uy*len); ctx.lineTo(x-ux*(len+7)-uy*4,y-uy*(len+7)+ux*4); ctx.lineTo(x-ux*(len-3),y-uy*(len-3)); ctx.lineTo(x-ux*(len+7)+uy*4,y-uy*(len+7)-ux*4); ctx.closePath(); ctx.fill();
+  // iron head, lit on one side
+  ctx.fillStyle=V.ironDark; ctx.beginPath(); ctx.moveTo(x+ux*5,y+uy*5); ctx.lineTo(x-ux*7-uy*5,y-uy*7+ux*5); ctx.lineTo(x-ux*4,y-uy*4); ctx.closePath(); ctx.fill();
+  ctx.fillStyle=V.iron; ctx.beginPath(); ctx.moveTo(x+ux*5,y+uy*5); ctx.lineTo(x-ux*4,y-uy*4); ctx.lineTo(x-ux*7+uy*5,y-uy*7-ux*5); ctx.closePath(); ctx.fill();
+}
+function drawGoblin3D(g,i,t){
+  // throw timing: wind up over the last 0.4s before each throw, snap through, recover
+  let since, until;
+  if(sim){ since=sim.st.t-sim.st.throwT[i]; until=sim.st.gobNext[i]-sim.st.t; }
+  else { const ph=((t-(g.t0||0))%g.every+g.every)%g.every; since=ph; until=g.every-ph; }
+  let arm;
+  if(until<0.4) arm=-0.5+(1-until/0.4)*2.3;                 // drawing back over the shoulder
+  else if(since<0.12) arm=1.8-since/0.12*3.4;               // the snap
+  else if(since<0.45) arm=-1.6+(since-0.12)/0.33*1.1;       // follow-through, settling
+  else arm=-0.5+Math.sin(t*2+i)*0.08;
+  const holding = !(since<0.45 && since>=0) || until<0.4;
+  const crouch = until<0.4 ? (1-until/0.4)*4 : since<0.2 ? 4-since*20 : 0;
+  const breathe=Math.sin(t*3+i*1.7)*1.2;
+  const blink = ((t+i*1.3)%3.7)<0.12;
+  const look = sim ? Math.max(-1,Math.min(1,(sim.st.x-g.x)*g.dir/200)) : 0.4;
+  ctx.save(); ctx.translate(g.x,g.y);
+  ctx.fillStyle=V.shadow; ctx.beginPath(); ctx.ellipse(3,1,20,4,0,0,7); ctx.fill();
+  ctx.scale(g.dir*1.35,1.35);
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  const hipY=-12+crouch*0.6, chestY=-26+crouch+breathe*0.3;
+  // legs with knees
+  ctx.strokeStyle=V.goblinDark; ctx.lineWidth=3.2;
+  ctx.beginPath(); ctx.moveTo(-3,hipY); ctx.lineTo(-6,-6+crouch*0.3); ctx.lineTo(-5,0); ctx.lineTo(-9,0); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(3,hipY); ctx.lineTo(6,-6+crouch*0.3); ctx.lineTo(5,0); ctx.lineTo(10,0); ctx.stroke();
+  // far arm (balance) behind the body
+  ctx.strokeStyle=V.goblinDark; ctx.lineWidth=2.8;
+  ctx.beginPath(); ctx.moveTo(-2,chestY+3); ctx.lineTo(-9,chestY+10-arm*2); ctx.lineTo(-12,chestY+15); ctx.stroke();
+  // tunic with belt, lit from the upper left
+  const tg=ctx.createLinearGradient(-8,0,8,0); tg.addColorStop(0,V.wood); tg.addColorStop(1,V.tunic);
+  ctx.fillStyle=tg; ctx.beginPath(); ctx.moveTo(-6,chestY); ctx.lineTo(6,chestY); ctx.lineTo(8,hipY+2); ctx.lineTo(-8,hipY+2); ctx.closePath(); ctx.fill();
+  ctx.fillStyle=V.belt; ctx.fillRect(-8,hipY-2,16,3);
+  // head: big, pointy ears, eyes that track the rider
+  const hx=1, hy=chestY-9+breathe*0.4;
+  ctx.fillStyle=V.goblinDark;
+  ctx.beginPath(); ctx.moveTo(hx-7,hy-2); ctx.lineTo(hx-17,hy-9); ctx.lineTo(hx-6,hy+2); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(hx+7,hy-2); ctx.lineTo(hx+17,hy-9); ctx.lineTo(hx+6,hy+2); ctx.closePath(); ctx.fill();
+  const hg=ctx.createRadialGradient(hx-3,hy-4,1,hx,hy,10); hg.addColorStop(0,V.goblin); hg.addColorStop(1,V.goblinDark);
+  ctx.fillStyle=hg; ctx.beginPath(); ctx.ellipse(hx,hy,9,8,0,0,7); ctx.fill();
+  if(blink){ ctx.strokeStyle=V.edge; ctx.lineWidth=1.4; ctx.beginPath(); ctx.moveTo(hx,hy-1); ctx.lineTo(hx+3,hy-1); ctx.moveTo(hx+4.5,hy-1); ctx.lineTo(hx+7.5,hy-1); ctx.stroke(); }
+  else {
+    ctx.fillStyle='#fff8e0'; ctx.beginPath(); ctx.arc(hx+1.5,hy-1,2.4,0,7); ctx.arc(hx+6,hy-1,2.4,0,7); ctx.fill();
+    ctx.fillStyle=V.edge; ctx.beginPath(); ctx.arc(hx+1.5+look*0.9,hy-0.8,1.1,0,7); ctx.arc(hx+6+look*0.9,hy-0.8,1.1,0,7); ctx.fill();
+  }
+  ctx.strokeStyle=V.edge; ctx.lineWidth=1.3; ctx.beginPath(); ctx.moveTo(hx-0.5,hy-4.5); ctx.lineTo(hx+3.5,hy-3.2); ctx.moveTo(hx+8,hy-4.5); ctx.lineTo(hx+4.5,hy-3.2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(hx+1,hy+4); ctx.quadraticCurveTo(hx+4,hy+5.5,hx+7,hy+3.5); ctx.stroke();
+  ctx.fillStyle='#fff8e0'; ctx.fillRect(hx+2.4,hy+3.6,1.4,1.8); ctx.fillRect(hx+5,hy+3.4,1.4,1.8);
+  // throwing arm, upper and lower, with the spear in hand when loaded
+  const sx=2, sy=chestY+2, ex=sx+Math.cos(arm+Math.PI)*-7, ey=sy+Math.sin(arm+Math.PI)*-7, hx2=ex+Math.cos(arm+Math.PI*0.85)*-7, hy2=ey+Math.sin(arm+Math.PI*0.85)*-7;
+  ctx.strokeStyle=V.goblin; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(ex,ey); ctx.lineTo(hx2,hy2); ctx.stroke();
+  ctx.restore();
+  if(holding){
+    const wx=g.x+g.dir*1.35*hx2, wy=g.y+1.35*hy2, aim=Math.atan2(g.v[1],g.v[0]*g.dir)+(until<0.4?-0.6*(1-until/0.4):0.5);
+    spear3d(wx+Math.cos(aim)*g.dir*14, wy+Math.sin(aim)*14, Math.cos(aim)*g.dir, Math.sin(aim), false);
+  }
+}
+function drawValleyActors(t,dt){
+  for(const [i,g] of (level.goblins||[]).entries()){ torch(g.x-g.dir*34, g.y, t); }
+  for(const [i,g] of (level.goblins||[]).entries()) drawGoblin3D(g,i,t);
+  if(!sim) return;
+  let stuckNow=0;
+  for(const s of sim.st.spears){
+    if(s.stuck){
+      stuckNow++;
+      const since=s.age-(s.stuckAt||s.age), q=Math.sin(since*42)*Math.exp(-since*5)*0.3;
+      const a=Math.atan2(s.vy,s.vx)+q;
+      ctx.save(); if(s.age>2) ctx.globalAlpha=Math.max(0.2,1-(s.age-2)/5); spear3d(s.x,s.y,Math.cos(a),Math.sin(a),false); ctx.restore();
+      if(!s.fxDone){ s.fxDone=true; for(let k=0;k<7;k++){ const ang=Math.atan2(-s.vy,-s.vx)+(Math.random()-0.5)*1.6, sp=80+Math.random()*120;
+        fx.push({x:s.x,y:s.y,vx:Math.cos(ang)*sp,vy:Math.sin(ang)*sp,life:0.35+Math.random()*0.25,color:V.wood,size:2+Math.random()*2,g:500}); } }
+    } else {
+      softShadow(s.x,s.y,8);
+      spear3d(s.x,s.y,s.vx,s.vy,true);
+    }
+  }
+}
+
 function spearArc(g){
   const pts=[g.x+g.dir*12, g.y-30]; let x=pts[0], y=pts[1], vx=g.v[0], vy=g.v[1];
   for(let i=0;i<240;i++){ vy+=SPEAR_G/60; x+=vx/60; y+=vy/60; pts.push(x,y); if(y>H||x<0||x>W) break; }
@@ -1724,7 +1937,7 @@ function spearArc(g){
 }
 function drawSpearArcs(){
   if(mode!=='edit') return;
-  ctx.save(); ctx.strokeStyle=C.hazard; ctx.globalAlpha=0.45; ctx.lineWidth=2.5; ctx.setLineDash([3,9]); ctx.lineCap='round';
+  ctx.save(); ctx.strokeStyle=level.theme==='valley'?V.arc:C.hazard; ctx.globalAlpha=0.45; ctx.lineWidth=2.5; ctx.setLineDash([3,9]); ctx.lineCap='round';
   for(const g of level.goblins||[]){ pathPoly(spearArc(g)); ctx.stroke(); }
   ctx.restore();
 }
@@ -1845,11 +2058,20 @@ function frame(now){
   if(key!==frame.key){
     frame.key=key; ctx=layerCtx;
     ctx.setTransform(dpr,0,0,dpr,0,0);
+    if(level.theme==='valley'){
+      // the valley scene is painted fresh each frame underneath; this layer only holds solids and ink
+      valleyPalette();
+      ctx.clearRect(0,0,view.cw,view.ch);
+      ctx.setTransform(dpr*view.s,0,0,dpr*view.s,dpr*view.ox,dpr*view.oy);
+      ctx.save(); ctx.beginPath(); ctx.rect(0,0,W,H); ctx.clip();
+      drawGhost(); drawHint(); drawSpearArcs(); drawValleySolids(); drawValleyInk();
+    } else {
     ctx.fillStyle=C.desk; ctx.fillRect(0,0,view.cw,view.ch);
     ctx.setTransform(dpr*view.s,0,0,dpr*view.s,dpr*view.ox,dpr*view.oy);
     ctx.save(); ctx.shadowColor='rgba(10,30,60,.18)'; ctx.shadowBlur=18; ctx.shadowOffsetY=4; ctx.fillStyle=C.paper; ctx.fillRect(0,0,W,H); ctx.restore();
     ctx.save(); ctx.beginPath(); ctx.rect(0,0,W,H); ctx.clip();
     drawPaper(); drawNoDraw(); drawGhost(); drawHint(); drawSpearArcs(); drawFixed(); drawInk();
+    }
     if(mode==='edit') drawStartMarker();
     ctx.restore();
     ctx=mainCtx;
@@ -1857,11 +2079,23 @@ function frame(now){
   let sx=0, sy=0; if(shake>0){ sx=(Math.random()-0.5)*shake; sy=(Math.random()-0.5)*shake; shake=Math.max(0,shake-dt*40); }
   ctx.setTransform(1,0,0,1,0,0);
   ctx.fillStyle=C.desk; ctx.fillRect(0,0,canvas.width,canvas.height);
+  const valley = level.theme==='valley';
+  if(valley){
+    // parallax follows the rider during a ride, drifts home in edit mode
+    const target = sim ? (sim.st.x-500) : 0;
+    valleyPar += (target-valleyPar)*Math.min(1,dt*2.5);
+    ctx.setTransform(dpr*view.s,0,0,dpr*view.s,dpr*(view.ox+sx),dpr*(view.oy+sy));
+    ctx.save(); ctx.shadowColor='rgba(10,30,60,.25)'; ctx.shadowBlur=18; ctx.shadowOffsetY=4; ctx.fillStyle=V.sky1; ctx.fillRect(0,0,W,H); ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(0,0,W,H); ctx.clip(); drawValleyBack(t); ctx.restore();
+    ctx.setTransform(1,0,0,1,0,0);
+  }
   ctx.drawImage(layer, sx*dpr, sy*dpr);
   ctx.setTransform(dpr*view.s,0,0,dpr*view.s,dpr*(view.ox+sx),dpr*(view.oy+sy));
   ctx.save(); ctx.beginPath(); ctx.rect(0,0,W,H); ctx.clip();
-  drawChevrons(); drawPortals(t); drawGoal(t); drawStars(t); drawGoblins(t);
+  drawChevrons(); drawPortals(t); drawGoal(t); drawStars(t);
+  if(valley) drawValleyActors(t,dt); else drawGoblins(t);
   drawTrail();
+  if(valley && !ragdoll){ const rx=sim?sim.st.x:level.start[0], ry=sim?sim.st.y:level.start[1]; softShadow(rx,ry+9,14); }
   if(ragdoll) drawRagdoll(dt,t);
   else if(sim) drawRider(sim.st.x, sim.st.y, t);
   else drawRider(level.start[0], level.start[1], t);
