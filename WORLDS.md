@@ -11,7 +11,7 @@ tap controls, or is another page you draw on.
 | Paper Skies | 5 | The sled becomes a paper plane. Fly through gaps between giant pencils. | Tap to flap |
 | Spear Valley | 7 | A second page to draw on. Goblins throw spears on a fixed beat; ink stops spears, so you can draw shields. | Draw, then Ride |
 | Doodle Dash | 8 | Off the sled, running along a notebook line. Jump ink blots and erasers, slide under rulers. | Tap right: jump. Hold left: slide |
-| Bits & Pieces | 10 | The rider comes apart and rebuilds as a physics ragdoll (points and sticks with weak muscles, Human: Fall Flat style): a rolling head, a springy pogo you steer mid-hop (a ghost foot shows where you'll land, green or red), a wobbly two-legged walker whose heavy head topples it when it goes too fast, an armed runner, then whole with a floppy scarf. Falling over isn't failure: you flop and get back up. Spikes and gaps send you back to your last piece. | Hold to go, let go to ease off |
+| Bits & Pieces | 10 | The rider comes apart and rebuilds as a physics ragdoll (points and sticks with weak muscles, Human: Fall Flat style): a rolling head, a springy pogo you steer mid-hop (a ghost foot shows where you'll land, green or red), a wobbly two-legged walker whose heavy head topples it when it goes too fast, an armed runner chased by a giant eraser that rubs out the page behind you, then whole with a floppy scarf. Falling over isn't failure: you flop and get back up. Spikes and gaps send you back to your last piece. | Hold to go, let go to ease off |
 
 Daily levels from #2 on put a portal into Paper Skies, Doodle Dash or Bits & Pieces on about 45% of days.
 

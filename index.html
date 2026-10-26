@@ -737,7 +737,7 @@ function makePiecesWorld(seed, nStars){
   const slope=x=>{ const a=ground(x-4), b=ground(x+4); return a===a && b===b ? (b-a)/8 : 0; };   // gaps have no ground, so no slope
   const pickups=[{x:starts[1]-60, part:'leg', to:'pogo', msg:'A leg! Hold to hop further, let go to hop shorter. The ghost foot shows where you land.'},
                  {x:starts[2]-60, part:'leg', to:'walk', msg:'Two legs, no arms, heavy head. Hold to walk. Too fast and over you go.'},
-                 {x:starts[3]-60, part:'arms', to:'arms', msg:'Arms! Much better balance. Run!'},
+                 {x:starts[3]-60, part:'arms', to:'arms', msg:'Arms! Much better balance. Now RUN, the eraser is coming!'},
                  {x:starts[4]-60, part:'scarf', to:'whole', msg:'Your scarf! All in one piece. Through the portal!'}];
   const stars=[];
   if(nStars>0){ const s=spikes[Math.min(spikes.length-1,1)]; stars.push({x:(s[0]+s[1])/2, y:BASE-150, got:false}); }
@@ -779,7 +779,7 @@ function makePiecesWorld(seed, nStars){
   const vel=q=>[(q.x-q.px)/H1,(q.y-q.py)/H1];
   const setVel=(q,vx,vy)=>{ q.px=q.x-vx*H1; q.py=q.y-vy*H1; };
   let checkpoint=b0+120, phase=0, wasFoot=false;
-  function respawn(msg){ build(w.form, checkpoint+20); w.msg=msg; w.msgT=2; w.respawns++; if(!w.quiet) sfx.crash(); }
+  function respawn(msg){ build(w.form, checkpoint+20); w.msg=msg; w.msgT=2; w.respawns++; if(w.eraser){ w.eraser.x=checkpoint-235; w.eraser.v=140; } if(!w.quiet) sfx.crash(); }
   const w={kind:'pieces', x:b0+120, y:BASE-16, vx:0, vy:0, t:0, status:'intro', reason:'', starsGot:0, stars, spikes, pickups,
     form:'ball', holding:false, tilt:0, speed:0, down:0, getup:0, flops:0, respawns:0, quiet:false, spin:0, endX:total+120, GROUND:BASE, groundAt:ground, msg:'', msgT:0, parts:{}, sticks:[],
     press(){ if(w.status==='ready') w.status='play'; w.holding=true; },
@@ -896,9 +896,19 @@ function makePiecesWorld(seed, nStars){
         if(q.y>WH+40) return respawn('Into the gap! Back to your last piece.');
         if(q.ground && k[0]!=='S' && spikes.some(s=>q.x>s[0]-2 && q.x<s[1]+2)) return respawn('Ouch, spikes! Back to your last piece.');
       }
+      // the giant eraser: once you have your arms it rubs out the page behind you. It's a bit slower than
+      // a good run, catches you if you dawdle or fall, and speeds up if you get far ahead
+      if(w.eraser){
+        const e=w.eraser, gap=w.x-e.x, target = gap>420 ? 340 : 262;
+        e.v += (target-e.v)*Math.min(1,dt*2); e.x += e.v*dt;
+        let rear=Infinity; for(const k in P) if(k[0]!=='S') rear=Math.min(rear,P[k].x);
+        if(e.x+55 > rear) return respawn('Erased! Back to your last piece.');
+        if(!w.quiet){ w._rub=(w._rub||0)-dt; if(w._rub<=0 && gap<380){ w._rub=0.22; sfx.rub(Math.max(0.2,1-gap/380)); } }
+      }
       for(const p of pickups){
         if(!p.got && w.x>=p.x){
           p.got=true; checkpoint=p.x; w.msg=p.msg; w.msgT=3.2; sfx.star(1);
+          if(p.to==='arms') w.eraser={x:p.x-235, v:140};
           build(p.to, w.x, p.to==='walk' ? Math.min(60,Math.max(0,w.vx)) : Math.max(80,Math.min(260,w.vx)), 0);
         }
       }
@@ -926,13 +936,13 @@ function makePiecesWorld(seed, nStars){
   // save and restore the whole ragdoll, so the autopilot can try out moves with the real physics
   w.snapshot=()=>({pts:Object.fromEntries(Object.entries(P).map(([k,q])=>[k,{...q}])), form:w.form, wasFoot, phase, checkpoint,
     f:['x','y','vx','t','leanCmd','vt','down','getup','tilt','speed','respawns','starsGot','status','msg','msgT','flops','spin'].map(k=>w[k]),
-    got:pickups.map(p=>p.got), sgot:stars.map(s=>s.got)});
+    got:pickups.map(p=>p.got), sgot:stars.map(s=>s.got), er:w.eraser?{...w.eraser}:null});
   w.restore=s=>{
     if(w.form!==s.form) build(s.form, s.f[0]);
     for(const k in s.pts) Object.assign(P[k], s.pts[k]);
     wasFoot=s.wasFoot; phase=s.phase; checkpoint=s.checkpoint;
     ['x','y','vx','t','leanCmd','vt','down','getup','tilt','speed','respawns','starsGot','status','msg','msgT','flops','spin'].forEach((k,i)=>w[k]=s.f[i]);
-    pickups.forEach((p,i)=>p.got=s.got[i]); stars.forEach((q,i)=>q.got=s.sgot[i]);
+    pickups.forEach((p,i)=>p.got=s.got[i]); stars.forEach((q,i)=>q.got=s.sgot[i]); w.eraser=s.er?{...s.er}:null;
   };
   w.footDown=()=>!!(P.F&&P.F.ground);
   build('ball', b0+120);
@@ -1072,7 +1082,19 @@ function goblinVoice(word, pitch, delay=0){
     }
   }catch(e){}
 }
+function rubNoise(vol){
+  if(save.muted) return;
+  try{
+    actx = actx || new (window.AudioContext||window.webkitAudioContext)();
+    const n=Math.floor(actx.sampleRate*0.14), buf=actx.createBuffer(1,n,actx.sampleRate), d=buf.getChannelData(0);
+    for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*Math.sin(Math.PI*i/n);
+    const s=actx.createBufferSource(), bp=actx.createBiquadFilter(), g=actx.createGain();
+    s.buffer=buf; bp.type='bandpass'; bp.frequency.value=700+Math.random()*300; bp.Q.value=1.2; g.gain.value=0.05*vol;
+    s.connect(bp).connect(g).connect(actx.destination); s.start();
+  }catch(e){}
+}
 const sfx = {
+  rub(v){ rubNoise(v); },
   flap(){ tone(540,0.07,'square',0.025,1.5); },
   jump(){ tone(380,0.13,'triangle',0.05,1.9); },
   slide(){ tone(260,0.16,'sawtooth',0.02,0.5); },
@@ -1729,7 +1751,7 @@ function drawWorld(t,dt){
     // a close-up camera: the ragdoll is the show
     const Z=1.9, vis=v.vis/Z;
     w.camY = w.camY==null ? w.y : w.camY+(w.y-w.camY)*Math.min(1,dt*4);
-    camX=w.x-Math.min(240,vis*0.3);
+    camX=w.x-(w.eraser ? vis*0.55 : Math.min(240,vis*0.3));   // during the chase, leave room to see the eraser
     ctx.save(); ctx.translate(0,WH*0.6); ctx.scale(Z,Z); ctx.translate(0,-w.camY);
     drawPiecesWorld(w,t,camX,vis);
     drawPortal(w.endX+30-camX, ey, 60, t, false);
@@ -1798,6 +1820,41 @@ function drawPiecesWorld(w,t,camX,vis){
     ctx.restore();
   }
   for(const s of w.stars){ if(s.got) continue; starPath(s.x-camX, s.y+Math.sin(t*3)*3, 18); ctx.fillStyle=C.marker; ctx.fill(); ctx.lineWidth=2.5; ctx.strokeStyle=C.fg; ctx.stroke(); }
+  if(w.eraser){
+    const e=w.eraser, ex=e.x-camX, gy=w.groundAt(e.x)===w.groundAt(e.x)?w.groundAt(e.x):w.GROUND;
+    // everything behind it is rubbed out, with a smudgy edge
+    ctx.save(); ctx.fillStyle=C.paper; ctx.globalAlpha=0.92; ctx.fillRect(-20,-500,ex-30+20,1400);
+    ctx.globalAlpha=0.5; for(let k=0;k<6;k++){ ctx.fillRect(ex-30+k*4,-500,4,1400*(1-k/6)+0); }
+    ctx.restore();
+    // crumbs
+    w.crumbs=w.crumbs||[];
+    if(w.status==='play' && Math.random()<0.6) w.crumbs.push({x:e.x-50+Math.random()*20, y:gy-5-Math.random()*20, vx:-40-Math.random()*80, vy:-60-Math.random()*80, life:0.6});
+    ctx.fillStyle=C.eraser;
+    w.crumbs=w.crumbs.filter(c=>(c.life-=1/60)>0);
+    for(const c of w.crumbs){ c.vy+=900/60; c.x+=c.vx/60; c.y=Math.min(gy-2,c.y+c.vy/60); ctx.globalAlpha=Math.min(1,c.life*2); ctx.fillRect(c.x-camX,c.y,3,3); }
+    ctx.globalAlpha=1;
+    if(ex>-80){
+      const wob=Math.sin(t*9)*0.04, W2=110, H2=86;
+      ctx.save(); ctx.translate(ex,gy); ctx.rotate(wob);
+      ctx.fillStyle='rgba(0,0,0,0.15)'; ctx.beginPath(); ctx.ellipse(0,2,W2*0.55,6,0,0,7); ctx.fill();
+      ctx.fillStyle=C.eraser; ctx.strokeStyle=C.fg; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-W2/2,-H2,W2,H2,12) : ctx.rect(-W2/2,-H2,W2,H2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle=C.ink; ctx.globalAlpha=0.6; ctx.fillRect(-W2/2+2,-H2*0.42,W2-4,H2*0.42-2); ctx.globalAlpha=1;
+      // angry eyes, looking at you
+      ctx.fillStyle='#fff'; ctx.beginPath(); ctx.ellipse(8,-H2*0.68,9,7,0,0,7); ctx.ellipse(32,-H2*0.68,9,7,0,0,7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle=C.fg; ctx.beginPath(); ctx.arc(12,-H2*0.67,3.5,0,7); ctx.arc(36,-H2*0.67,3.5,0,7); ctx.fill();
+      ctx.lineWidth=3.5; ctx.beginPath(); ctx.moveTo(-2,-H2*0.86); ctx.lineTo(16,-H2*0.78); ctx.moveTo(42,-H2*0.86); ctx.lineTo(26,-H2*0.78); ctx.stroke();
+      ctx.restore();
+    } else {
+      // off-screen: a warning arrow at the left edge, more urgent as it closes in
+      const gap=w.x-e.x, k=Math.max(0,Math.min(1,1-(gap-150)/400));
+      ctx.save(); ctx.globalAlpha=0.5+0.5*k*(0.6+0.4*Math.sin(t*14)); ctx.fillStyle=C.hazard;
+      const ay=w.camY!=null?w.camY-30:gy-60;
+      ctx.beginPath(); ctx.moveTo(6,ay); ctx.lineTo(26,ay-14); ctx.lineTo(26,ay+14); ctx.closePath(); ctx.fill();
+      ctx.font='800 18px sans-serif'; ctx.fillText('ERASER', 32, ay+6);
+      ctx.restore();
+    }
+  }
   if(w.form==='pogo' && w.landAt && w.status==='play'){
     // ghost foot where this hop lands: green is safe, red means spikes
     const lx=w.landAt.x-camX, ly=w.groundAt(w.landAt.x);
